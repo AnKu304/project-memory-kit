@@ -25,6 +25,7 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertTrue((root / ".agents/skills/dependency-graph-rag/SKILL.md").exists())
             self.assertTrue((root / ".project-memory/config.yaml").exists())
             self.assertTrue((root / ".project-memory/install.json").exists())
+            self.assertTrue((root / ".project-memory/knowledge").exists())
             self.assertTrue((root / "tools/project_memory/cli.py").exists())
             self.assertTrue((root / "pmem").exists())
             metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
@@ -32,6 +33,7 @@ class InstallerNewRepoTest(unittest.TestCase):
             config_path = root / ".project-memory/config.yaml"
             config = config_path.read_text(encoding="utf-8")
             self.assertIn("backend: auto", config)
+            self.assertIn("knowledge_dir: .project-memory/knowledge", config)
             agents = (root / "AGENTS.md").read_text(encoding="utf-8")
             self.assertIn("This file is the project instruction hub", agents)
             self.assertIn("## Project Rules", agents)
@@ -42,7 +44,8 @@ class InstallerNewRepoTest(unittest.TestCase):
             doctor = subprocess.run([str(root / "pmem"), "doctor"], cwd=root, text=True, stdout=subprocess.PIPE)
             self.assertEqual(doctor.returncode, 0, doctor.stdout)
             self.assertIn(f"runtime version: {__version__}", doctor.stdout)
-            self.assertIn("migrations:", doctor.stdout)
+            self.assertIn("migrations: 2/2", doctor.stdout)
+            self.assertIn("current knowledge entries:", doctor.stdout)
             self.assertIn("vector backend:", doctor.stdout)
             self.assertIn("sqlite: ok", doctor.stdout)
 
@@ -74,6 +77,9 @@ class InstallerNewRepoTest(unittest.TestCase):
                 stderr=subprocess.PIPE,
                 text=True,
             )
+            knowledge_file = root / ".project-memory/knowledge/research/project.md"
+            knowledge_file.parent.mkdir(parents=True)
+            knowledge_file.write_text("# Project\n\nKeep this research note.\n", encoding="utf-8")
             before = subprocess.run(
                 [
                     "python3",
@@ -99,6 +105,7 @@ class InstallerNewRepoTest(unittest.TestCase):
             )
             self.assertEqual(before.stdout.strip(), after.stdout.strip())
             self.assertIn("backend: fallback", config_path.read_text(encoding="utf-8"))
+            self.assertTrue(knowledge_file.exists())
 
 
 if __name__ == "__main__":

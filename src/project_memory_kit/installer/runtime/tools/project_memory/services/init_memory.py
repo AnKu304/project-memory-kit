@@ -7,7 +7,7 @@ from tools.project_memory.services.migrations import apply_migrations
 
 
 def init_memory(root: Path) -> str:
-    for name in ["reports_dir", "logs_dir", "cache_dir"]:
+    for name in ["reports_dir", "logs_dir", "cache_dir", "knowledge_dir"]:
         config_path(root, name).mkdir(parents=True, exist_ok=True)
     config_path(root, "qdrant_path").mkdir(parents=True, exist_ok=True)
     apply_migrations(root)

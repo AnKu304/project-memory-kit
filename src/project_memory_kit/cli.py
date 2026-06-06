@@ -132,7 +132,7 @@ if typer is not None:
 
         return handler
 
-    for _name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "migrate"]:
+    for _name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "knowledge", "migrate"]:
         app.command(_name, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})(
             _forward(_name)
         )
@@ -162,7 +162,7 @@ def _argparse_main(argv: list[str]) -> int:
 
     sub.add_parser("version")
 
-    for name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "migrate"]:
+    for name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "knowledge", "migrate"]:
         p = sub.add_parser(name)
         p.add_argument("args", nargs=argparse.REMAINDER)
 

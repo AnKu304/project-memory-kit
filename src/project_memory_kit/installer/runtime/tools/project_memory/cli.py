@@ -10,6 +10,15 @@ from tools.project_memory.services.failure_memory import record_failure
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.init_memory import init_memory
+from tools.project_memory.services.knowledge import (
+    add_knowledge,
+    build_knowledge_context,
+    retire_knowledge,
+    search_knowledge,
+    show_knowledge,
+    update_knowledge,
+    write_knowledge_context,
+)
 from tools.project_memory.services.migrations import apply_migrations
 from tools.project_memory.services.search import search as search_service
 from tools.project_memory.services.test_selector import select_tests
@@ -67,9 +76,70 @@ def command_record_failure(args: argparse.Namespace) -> int:
 
 
 def command_search(args: argparse.Namespace) -> int:
-    for item in search_service(root(), args.query, args.limit):
+    for item in search_service(root(), args.query, args.limit, layer=args.layer):
         print(f"{item['path']} {item['fqn']}: {item['snippet']}")
     return 0
+
+
+def command_knowledge(args: argparse.Namespace) -> int:
+    try:
+        if args.knowledge_command == "add":
+            result = add_knowledge(
+                root(),
+                item_type=args.type,
+                title=args.title,
+                file_path=args.file,
+                entry_id=args.id,
+                tags=args.tags or [],
+                source=args.source,
+                summary=args.summary,
+                supersedes=args.supersedes,
+                links=args.link or [],
+            )
+            print(f"knowledge added: {result.id} v{result.version} {result.path}")
+            return 0
+        if args.knowledge_command == "update":
+            result = update_knowledge(
+                root(),
+                entry_id=args.id,
+                file_path=args.file,
+                title=args.title,
+                item_type=args.type,
+                tags=args.tags,
+                source=args.source,
+                summary=args.summary,
+                links=args.link,
+            )
+            print(f"knowledge updated: {result.id} v{result.version} {result.path}")
+            return 0
+        if args.knowledge_command == "search":
+            for item in search_knowledge(root(), args.query, args.limit, include_archived=args.include_archived):
+                print(
+                    f"[{item['type']}] {item['title']} v{item['version']} "
+                    f"{item['knowledge_id']} {item['path']}: {item['snippet']}"
+                )
+            return 0
+        if args.knowledge_command == "context":
+            if args.out:
+                out = Path(args.out)
+                if not out.is_absolute():
+                    out = root() / out
+                print(write_knowledge_context(root(), args.task, out, args.limit))
+            else:
+                print(build_knowledge_context(root(), args.task, args.limit), end="")
+            return 0
+        if args.knowledge_command == "show":
+            print(show_knowledge(root(), args.id), end="")
+            return 0
+        if args.knowledge_command == "retire":
+            result = retire_knowledge(root(), args.id, status=args.status)
+            print(f"knowledge {result.status}: {result.id} v{result.version} {result.path}")
+            return 0
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print("missing knowledge command", file=sys.stderr)
+    return 2
 
 
 def command_migrate(_: argparse.Namespace) -> int:
@@ -138,7 +208,55 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("search")
     p.add_argument("--query", required=True)
     p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--layer", choices=["knowledge"], default=None)
     p.set_defaults(func=command_search)
+
+    p = sub.add_parser("knowledge")
+    knowledge_sub = p.add_subparsers(dest="knowledge_command", required=True)
+
+    k = knowledge_sub.add_parser("add")
+    k.add_argument("--type", required=True)
+    k.add_argument("--title", required=True)
+    k.add_argument("--file", required=True)
+    k.add_argument("--id")
+    k.add_argument("--tags", action="append")
+    k.add_argument("--source")
+    k.add_argument("--summary")
+    k.add_argument("--supersedes")
+    k.add_argument("--link", action="append")
+    k.set_defaults(func=command_knowledge)
+
+    k = knowledge_sub.add_parser("update")
+    k.add_argument("--id", required=True)
+    k.add_argument("--file", required=True)
+    k.add_argument("--title")
+    k.add_argument("--type")
+    k.add_argument("--tags", action="append")
+    k.add_argument("--source")
+    k.add_argument("--summary")
+    k.add_argument("--link", action="append")
+    k.set_defaults(func=command_knowledge)
+
+    k = knowledge_sub.add_parser("search")
+    k.add_argument("--query", required=True)
+    k.add_argument("--limit", type=int, default=5)
+    k.add_argument("--include-archived", action="store_true")
+    k.set_defaults(func=command_knowledge)
+
+    k = knowledge_sub.add_parser("context")
+    k.add_argument("--task", required=True)
+    k.add_argument("--limit", type=int)
+    k.add_argument("--out")
+    k.set_defaults(func=command_knowledge)
+
+    k = knowledge_sub.add_parser("show")
+    k.add_argument("--id", required=True)
+    k.set_defaults(func=command_knowledge)
+
+    k = knowledge_sub.add_parser("retire")
+    k.add_argument("--id", required=True)
+    k.add_argument("--status", choices=["superseded", "archived"], default="archived")
+    k.set_defaults(func=command_knowledge)
 
     p = sub.add_parser("migrate")
     p.set_defaults(func=command_migrate)

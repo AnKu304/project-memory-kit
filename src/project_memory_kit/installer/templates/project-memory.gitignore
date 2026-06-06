@@ -2,4 +2,5 @@
 !config.yaml
 !.gitignore
 !README.md
-
+!knowledge/
+!knowledge/**

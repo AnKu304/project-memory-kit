@@ -1,6 +1,6 @@
 ---
 name: dependency-graph-rag
-description: Use for the mandatory local project-memory workflow before and after meaningful code changes: dependency impact analysis, context building, coding, bug fixing, refactoring, tests, and failure investigation.
+description: Use for the mandatory local project-memory workflow before and after meaningful code or knowledge work: dependency impact analysis, knowledge context, coding, bug fixing, refactoring, tests, research, architecture, SEO, design, UX, product principles, and failure investigation.
 ---
 
 # Dependency Graph RAG
@@ -25,6 +25,8 @@ Use this skill for:
 - build or dependency changes
 - code review
 - architecture analysis
+- research or resource analysis
+- SEO, UX, design, product, or content principles
 - failure investigation
 
 Skip only typo-only documentation edits that cannot affect runtime behavior.
@@ -46,6 +48,16 @@ Read:
 .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
+For research, product, UX, design, SEO, architecture, content, positioning, or principle-heavy work, also run:
+
+```bash
+./pmem knowledge context --task "<user task>" --out .project-memory/reports/KNOWLEDGE_CONTEXT.md
+```
+
+Read the retrieved full Markdown files before relying on a rule or research note.
+
+Keep context bounded. Use `pmem` reports, targeted search, local tests, and concise summaries first. Do not paste large files or logs into the chat unless local reports are insufficient or the failure is ambiguous.
+
 Extract:
 
 - target files
@@ -55,6 +67,7 @@ Extract:
 - affected tests
 - related previous failures
 - architecture constraints
+- current project knowledge
 - low-confidence graph areas
 
 ## Editing Rules
@@ -67,6 +80,9 @@ Extract:
 - Preserve public API compatibility unless the task requires an API change.
 - Mark uncertainty in the final response when graph confidence is low.
 - Never store secrets in memory.
+- Use only `current` knowledge by default.
+- Update changed principles with `./pmem knowledge update`; do not create duplicate current rules.
+- Prefer local verification and small summaries over sending raw large outputs to the model.
 
 ## After Editing
 
@@ -79,6 +95,15 @@ Run:
 ```
 
 Run the returned targeted test commands.
+
+Use local project tooling and temporary sandboxes for verification when available. Save long failure logs under `.project-memory/logs/` and record them with `./pmem record-failure`; summarize only the relevant result.
+
+If durable research, architecture, SEO, design, UX, product, or content context changed:
+
+```bash
+./pmem knowledge add --type "<type>" --title "<title>" --file "<markdown file>"
+./pmem knowledge update --id "<knowledge id>" --file "<markdown file>"
+```
 
 If a test fails:
 
@@ -103,5 +128,6 @@ Report:
 - symbols changed
 - dependencies checked
 - tests run
+- knowledge records read or updated
 - failure memory updates
 - remaining risk

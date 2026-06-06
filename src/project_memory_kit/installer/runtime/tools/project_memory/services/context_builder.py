@@ -5,6 +5,7 @@ from pathlib import Path
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
+from tools.project_memory.services.knowledge import search_knowledge
 from tools.project_memory.services.search import search
 from tools.project_memory.services.test_selector import select_tests
 
@@ -15,8 +16,10 @@ def build_context(root: Path, task: str, base: str = "HEAD") -> str:
     store.initialize()
     cfg = load_config(root)
     max_chunks = int(cfg.get("memory", {}).get("max_context_chunks", 8))
+    max_knowledge = int(cfg.get("knowledge", {}).get("max_context_items", 5))
     query = task if task.strip() else " ".join(impact["changed_files"])
     search_rows = search(root, query, max_chunks) if query else []
+    knowledge_rows = search_knowledge(root, query, max_knowledge) if query else []
     tests = select_tests(root, base)
     failures = store.query(
         """
@@ -43,6 +46,15 @@ def build_context(root: Path, task: str, base: str = "HEAD") -> str:
             lines.append(f"- `{item['path']}` `{item['fqn']}`: {item['snippet']}")
     else:
         lines.append("- No FTS chunks retrieved.")
+    lines.extend(["", "## Retrieved Knowledge"])
+    if knowledge_rows:
+        for item in knowledge_rows:
+            lines.append(
+                f"- [{item['type']}] {item['title']} v{item['version']} "
+                f"`{item['knowledge_id']}`: {item['snippet']} (full: `{item['path']}`)"
+            )
+    else:
+        lines.append("- No current knowledge entries retrieved.")
     lines.extend(["", "## Related Previous Failures"])
     if failures:
         for row in failures:

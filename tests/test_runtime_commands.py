@@ -65,6 +65,156 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertIn("app.py", search.stdout)
 
+    def test_knowledge_lifecycle_updates_current_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            notes = root / "notes"
+            notes.mkdir()
+            source = notes / "seo.md"
+            source.write_text(
+                "# Product Page SEO\n\nUse legacy-copy-token for product pages.\n",
+                encoding="utf-8",
+            )
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+
+            add = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "add",
+                    "--type",
+                    "seo",
+                    "--title",
+                    "Product Page SEO",
+                    "--file",
+                    "notes/seo.md",
+                    "--tags",
+                    "seo,content",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(add.returncode, 0, add.stderr)
+            self.assertIn("product-page-seo", add.stdout)
+            self.assertTrue((root / ".project-memory/knowledge/seo/product-page-seo.md").exists())
+
+            search = subprocess.run(
+                [str(root / "pmem"), "knowledge", "search", "--query", "legacy-copy-token"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertIn("Product Page SEO", search.stdout)
+
+            source.write_text(
+                "# Product Page SEO\n\nUse canonical-copy-token for product pages.\n",
+                encoding="utf-8",
+            )
+            update = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "update",
+                    "--id",
+                    "product-page-seo",
+                    "--file",
+                    "notes/seo.md",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(update.returncode, 0, update.stderr)
+            self.assertIn("v2", update.stdout)
+
+            old_search = subprocess.run(
+                [str(root / "pmem"), "knowledge", "search", "--query", "legacy-copy-token"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(old_search.returncode, 0, old_search.stderr)
+            self.assertNotIn("legacy-copy-token", old_search.stdout)
+
+            new_search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "canonical-copy-token", "--layer", "knowledge"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(new_search.returncode, 0, new_search.stderr)
+            self.assertIn("Product Page SEO", new_search.stdout)
+            self.assertIn("canonical", new_search.stdout)
+
+            context = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "context",
+                    "--task",
+                    "rewrite product page seo copy",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(context.returncode, 0, context.stderr)
+            self.assertIn("## Current Knowledge", context.stdout)
+            self.assertIn("product-page-seo", context.stdout)
+
+            show = subprocess.run(
+                [str(root / "pmem"), "knowledge", "show", "--id", "product-page-seo"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(show.returncode, 0, show.stderr)
+            self.assertIn("version: 2", show.stdout)
+            self.assertNotIn("version: 1", show.stdout)
+
+            retire = subprocess.run(
+                [str(root / "pmem"), "knowledge", "retire", "--id", "product-page-seo"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(retire.returncode, 0, retire.stderr)
+            self.assertIn("archived", retire.stdout)
+
+            retired_search = subprocess.run(
+                [str(root / "pmem"), "knowledge", "search", "--query", "canonical-copy-token"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(retired_search.returncode, 0, retired_search.stderr)
+            self.assertEqual(retired_search.stdout.strip(), "")
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute(
+                    "SELECT status, version FROM knowledge_entries WHERE id = 'product-page-seo'"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(row, ("archived", 2))
+
     def test_indexes_js_ts_import_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

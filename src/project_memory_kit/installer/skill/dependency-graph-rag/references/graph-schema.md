@@ -2,7 +2,7 @@
 
 ## Node Kinds
 
-Project, Directory, File, Module, Symbol, Chunk, Layer, Test, Command, Error, Failure, Fix, ChangeSet, Decision.
+Project, Directory, File, Module, Symbol, Chunk, Knowledge, KnowledgeChunk, Layer, Test, Command, Error, Failure, Fix, ChangeSet, Decision.
 
 ## Edge Kinds
 
@@ -19,6 +19,7 @@ Test -> COVERS_FILE -> File
 ChangeSet -> TOUCHES -> File/Symbol
 Error -> OCCURRED_IN -> File/Symbol/Test
 Error -> FIXED_BY -> ChangeSet/Fix
+Knowledge -> CONTAINS -> KnowledgeChunk
 ```
 
 ## Parser Coverage

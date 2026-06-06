@@ -4,7 +4,7 @@ English version: [README.en.md](README.en.md)
 
 `project-memory-kit` добавляет в репозиторий локальную память для агентов, которые пишут код.
 
-Память хранится внутри проекта, поэтому несколько чатов могут работать над одним кодом без потери контекста: агент видит файлы, символы, импорты, обратные зависимости, релевантные тесты и прошлые падения.
+Память хранится внутри проекта, поэтому несколько чатов могут работать над одним кодом без потери контекста: агент видит файлы, символы, импорты, обратные зависимости, релевантные тесты, прошлые падения и смысловые правила проекта.
 
 ## Что появится в проекте
 
@@ -15,6 +15,7 @@ AGENTS.md
 .project-memory/.gitignore
 .project-memory/README.md
 .project-memory/install.json
+.project-memory/knowledge/
 tools/project_memory/
 pmem
 pmem.ps1
@@ -77,6 +78,8 @@ Upgrade обновляет managed-файлы и запускает migrations. 
 ./pmem context --task "<task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
+Контекст ограничивается короткими выдержками, id и путями к полной версии. Большие файлы и логи лучше проверять локальными командами и передавать агенту только итог, если полного текста не требуется.
+
 После правок:
 
 ```bash
@@ -116,14 +119,24 @@ pmem version
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "описание задачи"
+./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
+./pmem knowledge update --id resource-mechanics --file notes/research.md
+./pmem knowledge search --query "SEO rules"
+./pmem knowledge context --task "redesign product page"
+./pmem knowledge show --id resource-mechanics
+./pmem knowledge retire --id old-design-rules
 ./pmem tests --base HEAD
 ./pmem search --query "payment validation" --limit 10
+./pmem search --query "pricing SEO" --layer knowledge
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ```
 
 ## Как работает
 
 - SQLite хранит граф проекта: файлы, символы, chunks, imports, calls, inheritance, failures.
+- Knowledge layer хранит исследования, архитектуру, SEO, дизайн, UX, продуктовые механики и другие проектные принципы.
+- Полные версии knowledge-записей лежат в `.project-memory/knowledge/**/*.md`; SQLite хранит метаданные, статусы, версии и связи.
+- Поиск по knowledge по умолчанию использует только `current` записи. При изменении принципа используйте `knowledge update`, а не вторую конкурирующую запись.
 - У связей есть `confidence`; более точные bindings получают более высокий score.
 - SQLite FTS дает базовый поиск по chunks.
 - Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
@@ -132,6 +145,31 @@ pmem version
 - JS/TS parser извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references.
 - Для JS/TS используется TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе работает встроенный lexical parser.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
+
+## Knowledge Layer
+
+Типы можно задавать свободно. Базовые варианты: `research`, `architecture`, `seo`, `design`, `ux`, `product`, `decision`, `policy`, `note`.
+
+Пример:
+
+```bash
+./pmem knowledge add --type seo --title "Product Page SEO" --file docs/seo/product-page.md --tags seo,content
+./pmem knowledge context --task "update product page copy"
+```
+
+`knowledge context` возвращает короткий список актуальных записей и путь к full markdown. Полную запись открывают только если она действительно нужна для решения.
+
+Если правило изменилось:
+
+```bash
+./pmem knowledge update --id product-page-seo --file docs/seo/product-page.md
+```
+
+Устаревшее:
+
+```bash
+./pmem knowledge retire --id old-product-page-seo
+```
 
 ## Vector Backend
 

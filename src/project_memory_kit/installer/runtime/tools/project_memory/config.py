@@ -16,6 +16,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "reports_dir": ".project-memory/reports",
         "logs_dir": ".project-memory/logs",
         "cache_dir": ".project-memory/cache",
+        "knowledge_dir": ".project-memory/knowledge",
     },
     "indexing": {
         "include_extensions": [
@@ -57,6 +58,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "tests": {"default_commands": ["python -m unittest discover"], "test_roots": ["tests"]},
     "memory": {"max_context_chunks": 8, "vector_size": 64},
+    "knowledge": {"max_context_items": 5},
     "vector": {
         "backend": "auto",
         "collection": "project_memory_chunks",

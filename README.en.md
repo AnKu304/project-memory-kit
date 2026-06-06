@@ -4,7 +4,7 @@ Russian version: [README.md](README.md)
 
 `project-memory-kit` adds local project memory for coding agents.
 
-The memory lives inside the repository, so several chats can work on the same project without losing context. Agents can inspect files, symbols, imports, reverse dependencies, relevant tests, and previous failures before editing.
+The memory lives inside the repository, so several chats can work on the same project without losing context. Agents can inspect files, symbols, imports, reverse dependencies, relevant tests, previous failures, and durable project principles before editing.
 
 ## What It Installs
 
@@ -15,6 +15,7 @@ AGENTS.md
 .project-memory/.gitignore
 .project-memory/README.md
 .project-memory/install.json
+.project-memory/knowledge/
 tools/project_memory/
 pmem
 pmem.ps1
@@ -77,6 +78,8 @@ Before editing:
 ./pmem context --task "<task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
+Context stays bounded: short snippets, ids, and paths to full records. Prefer local commands for large files and logs, then pass only the useful summary unless full text is necessary.
+
 After editing:
 
 ```bash
@@ -116,14 +119,24 @@ Installed runtime:
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "task description"
+./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
+./pmem knowledge update --id resource-mechanics --file notes/research.md
+./pmem knowledge search --query "SEO rules"
+./pmem knowledge context --task "redesign product page"
+./pmem knowledge show --id resource-mechanics
+./pmem knowledge retire --id old-design-rules
 ./pmem tests --base HEAD
 ./pmem search --query "payment validation" --limit 10
+./pmem search --query "pricing SEO" --layer knowledge
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ```
 
 ## How It Works
 
 - SQLite stores the project graph: files, symbols, chunks, imports, calls, inheritance, failures.
+- The knowledge layer stores research, architecture, SEO, design, UX, product mechanics, and other project principles.
+- Full knowledge records live in `.project-memory/knowledge/**/*.md`; SQLite stores metadata, status, versions, and links.
+- Knowledge search uses only `current` records by default. When a principle changes, use `knowledge update` instead of creating a competing current record.
 - Edges have `confidence`; more exact bindings receive higher scores.
 - SQLite FTS provides baseline chunk search.
 - Qdrant local + FastEmbed provide semantic search when available.
@@ -132,6 +145,31 @@ Installed runtime:
 - The JS/TS parser extracts modules, classes, functions, methods, imports, exports, require, dynamic imports, calls, and JSX component references.
 - JS/TS uses the TypeScript compiler API when `node` and `typescript` are available in the project; otherwise it uses the built-in lexical parser.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
+
+## Knowledge Layer
+
+Types are flexible. Good defaults are `research`, `architecture`, `seo`, `design`, `ux`, `product`, `decision`, `policy`, and `note`.
+
+Example:
+
+```bash
+./pmem knowledge add --type seo --title "Product Page SEO" --file docs/seo/product-page.md --tags seo,content
+./pmem knowledge context --task "update product page copy"
+```
+
+`knowledge context` returns a short list of current records and paths to full Markdown. Open the full record only when it is needed for the task.
+
+When a rule changes:
+
+```bash
+./pmem knowledge update --id product-page-seo --file docs/seo/product-page.md
+```
+
+When it is obsolete:
+
+```bash
+./pmem knowledge retire --id old-product-page-seo
+```
 
 ## Vector Backend
 

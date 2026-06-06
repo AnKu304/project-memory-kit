@@ -29,6 +29,40 @@ CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes(path);
 CREATE INDEX IF NOT EXISTS idx_nodes_fqn ON nodes(fqn);
 CREATE INDEX IF NOT EXISTS idx_nodes_kind_path ON nodes(kind, path);
 
+CREATE TABLE IF NOT EXISTS knowledge_entries (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current',
+  version INTEGER NOT NULL DEFAULT 1,
+  source TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  path TEXT NOT NULL,
+  summary TEXT,
+  content_hash TEXT NOT NULL,
+  supersedes TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  properties_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_status ON knowledge_entries(status);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_type ON knowledge_entries(type);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_updated ON knowledge_entries(updated_at);
+
+CREATE TABLE IF NOT EXISTS knowledge_links (
+  id TEXT PRIMARY KEY,
+  knowledge_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  target TEXT NOT NULL,
+  properties_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(knowledge_id) REFERENCES knowledge_entries(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_links_knowledge ON knowledge_links(knowledge_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_links_target ON knowledge_links(target);
+
 CREATE TABLE IF NOT EXISTS edges (
   id TEXT PRIMARY KEY,
   src_id TEXT NOT NULL,
