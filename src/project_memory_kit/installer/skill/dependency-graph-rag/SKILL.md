@@ -7,6 +7,8 @@ description: Use for the mandatory local project-memory workflow before and afte
 
 Use this repository's local project memory before and after meaningful changes.
 
+If the local MCP server is configured, use `pmem_*` MCP tools for bounded context, search, impact, tests, knowledge, and rationale. The shell commands below remain the fallback and final verification baseline.
+
 ## Trigger
 
 Use this skill for:

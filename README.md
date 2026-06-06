@@ -137,7 +137,40 @@ pmem version
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
+./pmem mcp --root .
 ```
+
+## Локальный MCP
+
+`./pmem mcp` запускает локальный stdio MCP server поверх того же runtime и той же базы `.project-memory/`. Он не создает отдельную память и не отправляет данные во внешний сервис.
+
+Пример подключения для MCP-клиента:
+
+```toml
+[mcp_servers.project_memory]
+command = "/absolute/path/to/repo/pmem"
+args = ["mcp", "--root", "/absolute/path/to/repo"]
+```
+
+Доступные MCP tools:
+
+```text
+pmem_doctor
+pmem_index
+pmem_context
+pmem_impact
+pmem_tests
+pmem_search
+pmem_knowledge_context
+pmem_knowledge_search
+pmem_knowledge_show
+pmem_rationale_context
+pmem_rationale_search
+pmem_rationale_show
+pmem_record_failure
+```
+
+MCP удобен для коротких structured-ответов агенту. CLI-команды остаются базовым способом проверки и fallback, если MCP-клиент не настроен.
 
 ## Как работает
 
@@ -155,6 +188,7 @@ pmem version
 - Python parser извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings.
 - JS/TS parser извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references.
 - Для JS/TS используется TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе работает встроенный lexical parser.
+- Локальный MCP server предоставляет агентам tools для doctor/index/context/impact/search/tests/knowledge/rationale поверх того же `pmem` runtime.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
 
 ## Knowledge Layer

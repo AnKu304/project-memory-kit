@@ -10,6 +10,8 @@ tools/project_memory/
 .agents/skills/dependency-graph-rag/
 ```
 
+If the local MCP server is configured, use the equivalent `pmem_*` tools for bounded context, search, impact, tests, knowledge, and rationale. The CLI commands below remain the fallback and verification baseline.
+
 Before any meaningful code, config, schema, dependency, API, test, build, routing, migration, auth, persistence, or architecture change, run:
 
 ```bash

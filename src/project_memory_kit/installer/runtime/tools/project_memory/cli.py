@@ -20,6 +20,7 @@ from tools.project_memory.services.knowledge import (
     write_knowledge_context,
 )
 from tools.project_memory.services.migrations import apply_migrations
+from tools.project_memory.mcp import serve_stdio
 from tools.project_memory.services.rationale import (
     add_rationale,
     build_rationale_context,
@@ -237,6 +238,13 @@ def command_migrate(_: argparse.Namespace) -> int:
     return 0
 
 
+def command_mcp(args: argparse.Namespace) -> int:
+    mcp_root = Path(args.root)
+    if not mcp_root.is_absolute():
+        mcp_root = root() / mcp_root
+    return serve_stdio(mcp_root)
+
+
 def command_version(_: argparse.Namespace) -> int:
     print(__version__)
     return 0
@@ -400,6 +408,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("migrate")
     p.set_defaults(func=command_migrate)
+
+    p = sub.add_parser("mcp")
+    p.add_argument("--root", default=".")
+    p.set_defaults(func=command_mcp)
 
     p = sub.add_parser("version")
     p.set_defaults(func=command_version)

@@ -6,6 +6,14 @@ Project knowledge lives in `knowledge/`. These Markdown files are the full sourc
 
 Project rationale lives in `rationale/`. These Markdown files are the full source for verified decisions, rejected alternatives, experiments, invariants, and evidence-backed "why" records.
 
+Local MCP is available through:
+
+```bash
+./pmem mcp --root .
+```
+
+Use it only with a local MCP client. It reads the same `.project-memory/` state and does not create a separate database.
+
 Vector state is controlled by `config.yaml`:
 
 - `vector.backend: auto` tries Qdrant local + FastEmbed and falls back offline.

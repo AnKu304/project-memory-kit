@@ -137,7 +137,40 @@ Installed runtime:
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
+./pmem mcp --root .
 ```
+
+## Local MCP
+
+`./pmem mcp` starts a local stdio MCP server over the same runtime and the same `.project-memory/` database. It does not create separate memory and does not send data to an external service.
+
+Example MCP client config:
+
+```toml
+[mcp_servers.project_memory]
+command = "/absolute/path/to/repo/pmem"
+args = ["mcp", "--root", "/absolute/path/to/repo"]
+```
+
+Available MCP tools:
+
+```text
+pmem_doctor
+pmem_index
+pmem_context
+pmem_impact
+pmem_tests
+pmem_search
+pmem_knowledge_context
+pmem_knowledge_search
+pmem_knowledge_show
+pmem_rationale_context
+pmem_rationale_search
+pmem_rationale_show
+pmem_record_failure
+```
+
+MCP is useful for short structured tool responses to agents. The CLI commands remain the baseline verification path and fallback when an MCP client is not configured.
 
 ## How It Works
 
@@ -155,6 +188,7 @@ Installed runtime:
 - The Python parser extracts modules, classes, functions, methods, imports, calls, inheritance, and docstrings.
 - The JS/TS parser extracts modules, classes, functions, methods, imports, exports, require, dynamic imports, calls, and JSX component references.
 - JS/TS uses the TypeScript compiler API when `node` and `typescript` are available in the project; otherwise it uses the built-in lexical parser.
+- A local MCP server exposes doctor/index/context/impact/search/tests/knowledge/rationale tools over the same `pmem` runtime.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
 
 ## Knowledge Layer

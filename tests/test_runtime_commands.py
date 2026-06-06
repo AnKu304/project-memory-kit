@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sqlite3
 import tempfile
@@ -64,6 +65,74 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertIn("app.py", search.stdout)
+
+    def test_mcp_stdio_lists_tools_and_calls_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root)
+            (root / "app.py").write_text("def pay(amount):\n    return amount > 0\n", encoding="utf-8")
+            subprocess.run(["git", "add", "app.py"], cwd=root)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            messages = [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "unittest", "version": "0"},
+                    },
+                },
+                {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "pmem_search",
+                        "arguments": {"query": "pay amount", "limit": 5},
+                    },
+                },
+            ]
+            payload = "\n".join(json.dumps(message) for message in messages) + "\n"
+            mcp = subprocess.run(
+                [str(root / "pmem"), "mcp", "--root", str(root)],
+                cwd=root,
+                input=payload,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(mcp.returncode, 0, mcp.stderr)
+            responses = [json.loads(line) for line in mcp.stdout.splitlines()]
+            by_id = {item["id"]: item for item in responses}
+
+            self.assertEqual(by_id[1]["result"]["protocolVersion"], "2025-06-18")
+            tool_names = {tool["name"] for tool in by_id[2]["result"]["tools"]}
+            self.assertIn("pmem_context", tool_names)
+            self.assertIn("pmem_search", tool_names)
+            self.assertIn("pmem_record_failure", tool_names)
+            self.assertIn("app.py", by_id[3]["result"]["content"][0]["text"])
+            self.assertIn("results", by_id[3]["result"]["structuredContent"])
 
     def test_knowledge_lifecycle_updates_current_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

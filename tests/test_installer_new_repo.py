@@ -28,6 +28,7 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertTrue((root / ".project-memory/knowledge").exists())
             self.assertTrue((root / ".project-memory/rationale").exists())
             self.assertTrue((root / "tools/project_memory/cli.py").exists())
+            self.assertTrue((root / "tools/project_memory/mcp.py").exists())
             self.assertTrue((root / "pmem").exists())
             metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["runtime_version"], __version__)
