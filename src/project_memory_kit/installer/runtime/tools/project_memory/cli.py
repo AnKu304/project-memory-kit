@@ -10,8 +10,10 @@ from tools.project_memory.services.failure_memory import record_failure
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.init_memory import init_memory
+from tools.project_memory.services.migrations import apply_migrations
 from tools.project_memory.services.search import search as search_service
 from tools.project_memory.services.test_selector import select_tests
+from tools.project_memory.version import __version__
 
 
 def root() -> Path:
@@ -70,8 +72,24 @@ def command_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_migrate(_: argparse.Namespace) -> int:
+    applied = apply_migrations(root())
+    if applied:
+        print("applied migrations:")
+        for item in applied:
+            print(f"- {item}")
+    else:
+        print("migrations up to date")
+    return 0
+
+
+def command_version(_: argparse.Namespace) -> int:
+    print(__version__)
+    return 0
+
+
 def command_upgrade(_: argparse.Namespace) -> int:
-    print("Upgrade is installer-managed. Re-run the latest `pipx run --spec <repo> pmem init`.")
+    print("Upgrade is installer-managed. Run the latest `pipx run --spec <repo> pmem upgrade --target .`.")
     return 0
 
 
@@ -122,6 +140,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=10)
     p.set_defaults(func=command_search)
 
+    p = sub.add_parser("migrate")
+    p.set_defaults(func=command_migrate)
+
+    p = sub.add_parser("version")
+    p.set_defaults(func=command_version)
+
     p = sub.add_parser("upgrade")
     p.set_defaults(func=command_upgrade)
 
@@ -141,4 +165,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

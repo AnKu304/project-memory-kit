@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from project_memory_kit.installer.install_project import install_project, uninstall_project
+from project_memory_kit.version import __version__
 
 try:  # Typer is the packaged CLI. argparse keeps source-tree smoke tests zero-dependency.
     import typer
@@ -38,6 +39,7 @@ def init_command(
     profile: str = "python",
     runtime: str = "local",
     index: bool = False,
+    with_vector: bool = False,
 ) -> None:
     result = install_project(
         target=_target(target),
@@ -45,6 +47,7 @@ def init_command(
         profile=profile,
         runtime=runtime,
         run_index=index,
+        with_vector=with_vector,
     )
     print(result.summary())
 
@@ -55,11 +58,12 @@ def install_command(
     profile: str = "python",
     runtime: str = "local",
     index: bool = False,
+    with_vector: bool = False,
 ) -> None:
-    init_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index)
+    init_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index, with_vector=with_vector)
 
 
-def upgrade_command(target: str = ".") -> None:
+def upgrade_command(target: str = ".", with_vector: bool = False) -> None:
     result = install_project(
         target=_target(target),
         agent="codex",
@@ -67,6 +71,7 @@ def upgrade_command(target: str = ".") -> None:
         runtime="local",
         run_index=False,
         upgrade=True,
+        with_vector=with_vector,
     )
     print(result.summary())
 
@@ -86,8 +91,9 @@ if typer is not None:
         profile: str = typer.Option("python", "--profile", help="Project language profile."),
         runtime: str = typer.Option("local", "--runtime", help="Runtime mode."),
         index: bool = typer.Option(False, "--index", help="Run first full index after install."),
+        with_vector: bool = typer.Option(False, "--with-vector", help="Create a managed runtime venv with Qdrant/FastEmbed."),
     ) -> None:
-        init_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index)
+        init_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index, with_vector=with_vector)
 
     @app.command("install")
     def install_typer(
@@ -96,14 +102,20 @@ if typer is not None:
         profile: str = typer.Option("python", "--profile", help="Project language profile."),
         runtime: str = typer.Option("local", "--runtime", help="Runtime mode."),
         index: bool = typer.Option(False, "--index", help="Run first full index after install."),
+        with_vector: bool = typer.Option(False, "--with-vector", help="Create a managed runtime venv with Qdrant/FastEmbed."),
     ) -> None:
-        install_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index)
+        install_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index, with_vector=with_vector)
 
     @app.command("upgrade")
     def upgrade_typer(
         target: str = typer.Option(".", "--target", help="Repository root to upgrade."),
+        with_vector: bool = typer.Option(False, "--with-vector", help="Create or update the managed vector runtime venv."),
     ) -> None:
-        upgrade_command(target=target)
+        upgrade_command(target=target, with_vector=with_vector)
+
+    @app.command("version")
+    def version_typer() -> None:
+        print(__version__)
 
     @app.command("uninstall")
     def uninstall_typer(
@@ -120,7 +132,7 @@ if typer is not None:
 
         return handler
 
-    for _name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search"]:
+    for _name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "migrate"]:
         app.command(_name, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})(
             _forward(_name)
         )
@@ -137,25 +149,32 @@ def _argparse_main(argv: list[str]) -> int:
         p.add_argument("--profile", default="python")
         p.add_argument("--runtime", default="local")
         p.add_argument("--index", action="store_true")
+        p.add_argument("--with-vector", action="store_true")
 
     p = sub.add_parser("upgrade")
     p.add_argument("--target", default=".")
+    p.add_argument("--with-vector", action="store_true")
 
     p = sub.add_parser("uninstall")
     p.add_argument("--target", default=".")
     p.add_argument("--purge", action="store_true")
     p.add_argument("--keep-memory", action="store_true", default=True)
 
-    for name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search"]:
+    sub.add_parser("version")
+
+    for name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "migrate"]:
         p = sub.add_parser(name)
         p.add_argument("args", nargs=argparse.REMAINDER)
 
     ns = parser.parse_args(argv)
     if ns.command in {"init", "install"}:
-        init_command(ns.target, ns.agent, ns.profile, ns.runtime, ns.index)
+        init_command(ns.target, ns.agent, ns.profile, ns.runtime, ns.index, ns.with_vector)
         return 0
     if ns.command == "upgrade":
-        upgrade_command(ns.target)
+        upgrade_command(ns.target, ns.with_vector)
+        return 0
+    if ns.command == "version":
+        print(__version__)
         return 0
     if ns.command == "uninstall":
         uninstall_command(ns.target, ns.purge, ns.keep_memory)
@@ -172,4 +191,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

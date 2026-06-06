@@ -52,8 +52,8 @@ function nameText(node, fallback) {
   return node.name.getText(sourceFile);
 }
 
-function addImport(module, name, alias, line) {
-  imports.push({ module, name: name || null, alias: alias || null, line });
+function addImport(module, name, alias, line, kind = "import") {
+  imports.push({ module, name: name || null, alias: alias || null, line, kind });
 }
 
 function moduleText(moduleSpecifier) {
@@ -70,16 +70,16 @@ function collectImportDeclaration(node) {
   const line = startLine(node);
   const clause = node.importClause;
   if (!clause) {
-    addImport(module, null, null, line);
+    addImport(module, null, null, line, "import");
     return;
   }
   if (clause.name) {
-    addImport(module, "default", clause.name.text, line);
+    addImport(module, "default", clause.name.text, line, "import");
   }
   const bindings = clause.namedBindings;
   if (!bindings) return;
   if (ts.isNamespaceImport(bindings)) {
-    addImport(module, "*", bindings.name.text, line);
+    addImport(module, "*", bindings.name.text, line, "import");
     return;
   }
   for (const specifier of bindings.elements) {
@@ -87,7 +87,8 @@ function collectImportDeclaration(node) {
       module,
       specifier.propertyName ? specifier.propertyName.text : specifier.name.text,
       specifier.propertyName ? specifier.name.text : null,
-      line
+      line,
+      "import"
     );
   }
 }
@@ -97,11 +98,11 @@ function collectExportDeclaration(node) {
   if (!module) return;
   const line = startLine(node);
   if (!node.exportClause) {
-    addImport(module, "*", null, line);
+    addImport(module, "*", null, line, "export");
     return;
   }
   if (ts.isNamespaceExport(node.exportClause)) {
-    addImport(module, "*", node.exportClause.name.text, line);
+    addImport(module, "*", node.exportClause.name.text, line, "export");
     return;
   }
   for (const specifier of node.exportClause.elements) {
@@ -109,7 +110,8 @@ function collectExportDeclaration(node) {
       module,
       specifier.propertyName ? specifier.propertyName.text : specifier.name.text,
       specifier.propertyName ? specifier.name.text : null,
-      line
+      line,
+      "export"
     );
   }
 }
@@ -120,7 +122,7 @@ function collectRequireLike(node) {
   if (expressionText !== "require" && expressionText !== "import") return;
   const firstArg = node.arguments[0];
   const module = moduleText(firstArg);
-  if (module) addImport(module, null, null, startLine(node));
+  if (module) addImport(module, null, null, startLine(node), expressionText === "require" ? "require" : "dynamic_import");
 }
 
 function collectUsage(node) {

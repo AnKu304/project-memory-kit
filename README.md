@@ -14,6 +14,7 @@ AGENTS.md
 .project-memory/config.yaml
 .project-memory/.gitignore
 .project-memory/README.md
+.project-memory/install.json
 tools/project_memory/
 pmem
 pmem.ps1
@@ -44,12 +45,26 @@ pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init 
 pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
 ```
 
+С управляемым vector runtime:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --with-vector
+```
+
 Проверка:
 
 ```bash
 ./pmem doctor
 ./pmem index --mode full
 ```
+
+## Обновление
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target .
+```
+
+Upgrade обновляет managed-файлы и запускает migrations. Базы и runtime state в `.project-memory/` сохраняются.
 
 ## Рабочий цикл агента
 
@@ -85,14 +100,18 @@ Installer:
 pmem init --target .
 pmem install --target .
 pmem upgrade --target .
+pmem upgrade --target . --with-vector
 pmem uninstall --target . --keep-memory
 pmem uninstall --target . --purge
+pmem version
 ```
 
 В установленном проекте:
 
 ```bash
+./pmem version
 ./pmem doctor
+./pmem migrate
 ./pmem index --mode full
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
@@ -105,6 +124,7 @@ pmem uninstall --target . --purge
 ## Как работает
 
 - SQLite хранит граф проекта: файлы, символы, chunks, imports, calls, inheritance, failures.
+- У связей есть `confidence`; более точные bindings получают более высокий score.
 - SQLite FTS дает базовый поиск по chunks.
 - Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
 - Если Qdrant/FastEmbed недоступны, включается deterministic fallback, чтобы установка и индексирование не ломались.
@@ -136,6 +156,13 @@ vector:
 python3 -m pip install qdrant-client fastembed
 ./pmem doctor
 ./pmem index --mode full
+```
+
+Или установите управляемый runtime:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --with-vector
+./pmem doctor
 ```
 
 Если нужен другой Python:

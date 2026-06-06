@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -7,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from project_memory_kit.installer.install_project import install_project
+from project_memory_kit.version import __version__
 
 
 class InstallerNewRepoTest(unittest.TestCase):
@@ -22,8 +24,11 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertTrue((root / "AGENTS.md").exists())
             self.assertTrue((root / ".agents/skills/dependency-graph-rag/SKILL.md").exists())
             self.assertTrue((root / ".project-memory/config.yaml").exists())
+            self.assertTrue((root / ".project-memory/install.json").exists())
             self.assertTrue((root / "tools/project_memory/cli.py").exists())
             self.assertTrue((root / "pmem").exists())
+            metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["runtime_version"], __version__)
             config_path = root / ".project-memory/config.yaml"
             config = config_path.read_text(encoding="utf-8")
             self.assertIn("backend: auto", config)
@@ -36,8 +41,13 @@ class InstallerNewRepoTest(unittest.TestCase):
 
             doctor = subprocess.run([str(root / "pmem"), "doctor"], cwd=root, text=True, stdout=subprocess.PIPE)
             self.assertEqual(doctor.returncode, 0, doctor.stdout)
+            self.assertIn(f"runtime version: {__version__}", doctor.stdout)
+            self.assertIn("migrations:", doctor.stdout)
             self.assertIn("vector backend:", doctor.stdout)
             self.assertIn("sqlite: ok", doctor.stdout)
+
+            version = subprocess.run([str(root / "pmem"), "version"], cwd=root, text=True, stdout=subprocess.PIPE)
+            self.assertEqual(version.stdout.strip(), __version__)
 
             config_path.write_text(config.replace("backend: auto", "backend: fallback"), encoding="utf-8")
             index = subprocess.run(
@@ -45,6 +55,50 @@ class InstallerNewRepoTest(unittest.TestCase):
             )
             self.assertEqual(index.returncode, 0, index.stdout)
             self.assertIn("indexed=", index.stdout)
+
+    def test_upgrade_preserves_state_and_config_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.py").write_text("def saved():\n    return True\n", encoding="utf-8")
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            before = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "import sqlite3; c=sqlite3.connect('.project-memory/graph.sqlite'); print(c.execute(\"select count(*) from nodes\").fetchone()[0])",
+                ],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            install_project(root, upgrade=True)
+            after = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "import sqlite3; c=sqlite3.connect('.project-memory/graph.sqlite'); print(c.execute(\"select count(*) from nodes\").fetchone()[0])",
+                ],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            self.assertEqual(before.stdout.strip(), after.stdout.strip())
+            self.assertIn("backend: fallback", config_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

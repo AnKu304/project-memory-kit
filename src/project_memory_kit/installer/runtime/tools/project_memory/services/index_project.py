@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from tools.project_memory.config import config_path, load_config
@@ -90,6 +91,8 @@ def _index_parse_result(
                 "docstring": symbol.docstring,
                 "decorators": symbol.decorators,
                 "bases": symbol.bases,
+                "calls": symbol.calls,
+                "references": symbol.references,
             },
         )
         symbol_ids[symbol.fqn] = symbol_id
@@ -133,6 +136,7 @@ def _index_parse_result(
     for item in result.imports:
         if item.target_path:
             target_path = Path(item.target_path)
+            edge_source = f"import:{item.kind}:{item.name or '*'}:{item.alias or ''}"
             target_id = store.upsert_node(
                 kind="File",
                 name=target_path.name,
@@ -140,9 +144,162 @@ def _index_parse_result(
                 path=item.target_path,
                 language=_language_for_path(target_path),
             )
-            store.upsert_edge(file_id, target_id, "IMPORTS", confidence=0.85, evidence=item.module)
+            store.upsert_edge(
+                file_id,
+                target_id,
+                "IMPORTS",
+                source=edge_source,
+                confidence=0.85,
+                evidence=item.module,
+                properties={"name": item.name, "alias": item.alias, "import_kind": item.kind, "line": item.line},
+            )
     store.update_file_state(rel, file_hash, parser_name, result.warnings)
     return [f"{rel}: {warning}" for warning in result.warnings]
+
+
+def _json_props(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        data = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _symbols_for_path(store: SQLiteGraphStore, path: str) -> list[dict]:
+    rows = store.query(
+        """
+        SELECT id, name, fqn, path, properties_json
+        FROM nodes
+        WHERE kind = 'Symbol' AND path = ?
+        """,
+        (path,),
+    )
+    return [dict(row) for row in rows]
+
+
+def _matching_symbols(store: SQLiteGraphStore, path: str, name: str | None, fallback_name: str | None = None) -> list[dict]:
+    if not name:
+        return []
+    names = [name]
+    if name == "default" and fallback_name:
+        names.append(fallback_name)
+    symbols = _symbols_for_path(store, path)
+    matches: list[dict] = []
+    for candidate in names:
+        for symbol in symbols:
+            if symbol["name"] == candidate or str(symbol["fqn"]).endswith("." + candidate):
+                matches.append(symbol)
+        if matches:
+            return matches
+    return matches
+
+
+def _outgoing_imports(store: SQLiteGraphStore, path: str) -> list[dict]:
+    rows = store.query(
+        """
+        SELECT dst.path AS dst_path, e.evidence, e.properties_json
+        FROM edges e
+        JOIN nodes src ON src.id = e.src_id
+        JOIN nodes dst ON dst.id = e.dst_id
+        WHERE e.kind = 'IMPORTS' AND src.kind = 'File' AND src.path = ?
+        """,
+        (path,),
+    )
+    return [dict(row) for row in rows]
+
+
+def _resolve_imported_symbols(
+    store: SQLiteGraphStore,
+    target_path: str,
+    name: str | None,
+    fallback_name: str | None,
+    seen: set[tuple[str, str | None]],
+) -> list[dict]:
+    key = (target_path, name)
+    if key in seen:
+        return []
+    seen.add(key)
+    direct = _matching_symbols(store, target_path, name, fallback_name)
+    if direct:
+        return direct
+
+    resolved: list[dict] = []
+    for edge in _outgoing_imports(store, target_path):
+        props = _json_props(edge.get("properties_json"))
+        if props.get("import_kind") != "export":
+            continue
+        exported_name = props.get("alias") or props.get("name")
+        if props.get("name") != "*" and exported_name != name:
+            continue
+        next_name = name if props.get("name") == "*" else props.get("name")
+        resolved.extend(_resolve_imported_symbols(store, str(edge["dst_path"]), next_name, fallback_name, seen))
+    return resolved
+
+
+def _token_used(token: str, props: dict, key: str) -> bool:
+    values = props.get(key, [])
+    if not isinstance(values, list):
+        return False
+    return any(value == token or str(value).startswith(token + ".") for value in values)
+
+
+def _bind_cross_file_symbols(store: SQLiteGraphStore) -> int:
+    imports = store.query(
+        """
+        SELECT src.path AS src_path, dst.path AS dst_path, e.evidence, e.properties_json
+        FROM edges e
+        JOIN nodes src ON src.id = e.src_id
+        JOIN nodes dst ON dst.id = e.dst_id
+        WHERE e.kind = 'IMPORTS' AND src.kind = 'File' AND dst.kind = 'File'
+        """
+    )
+    bound = 0
+    for item in imports:
+        props = _json_props(item["properties_json"])
+        if props.get("import_kind") not in {"import", "dynamic_import", "require"}:
+            continue
+        name = props.get("name")
+        alias = props.get("alias")
+        if name in {None, "*"}:
+            continue
+        token = alias or name
+        targets = _resolve_imported_symbols(store, item["dst_path"], name, token, set())
+        if not targets:
+            continue
+        for source_symbol in _symbols_for_path(store, item["src_path"]):
+            source_props = _json_props(source_symbol.get("properties_json"))
+            calls = _token_used(token, source_props, "calls")
+            refs = calls or _token_used(token, source_props, "references")
+            if not refs:
+                continue
+            for target in targets:
+                if source_symbol["id"] == target["id"]:
+                    continue
+                evidence = f"{item['evidence']}:{name}" + (f" as {alias}" if alias else "")
+                store.upsert_edge(
+                    source_symbol["id"],
+                    target["id"],
+                    "REFERENCES",
+                    source="binding",
+                    confidence=0.82,
+                    evidence=evidence,
+                    properties={"binding": "imported_symbol", "token": token},
+                )
+                bound += 1
+                if calls:
+                    store.upsert_edge(
+                        source_symbol["id"],
+                        target["id"],
+                        "CALLS",
+                        source="binding",
+                        confidence=0.78,
+                        evidence=evidence,
+                        properties={"binding": "imported_symbol", "token": token},
+                    )
+                    bound += 1
+    return bound
 
 
 def index_project(root: Path, mode: str = "changed") -> str:
@@ -213,6 +370,9 @@ def index_project(root: Path, mode: str = "changed") -> str:
         indexed += 1
 
     summary = [f"indexed={indexed}", f"skipped={skipped}", f"mode={mode}"]
+    bound = _bind_cross_file_symbols(store)
+    if bound:
+        summary.append(f"bindings={bound}")
     if warnings:
         summary.append("warnings:")
         summary.extend(f"- {warning}" for warning in warnings[:20])

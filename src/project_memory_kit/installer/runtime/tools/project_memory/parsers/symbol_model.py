@@ -10,6 +10,7 @@ class ImportRef:
     alias: str | None
     line: int
     target_path: str | None = None
+    kind: str = "import"
 
 
 @dataclass
@@ -33,4 +34,3 @@ class ParseResult:
     symbols: list[Symbol] = field(default_factory=list)
     imports: list[ImportRef] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
-

@@ -158,6 +158,7 @@ def _import_from_json(item: dict[str, Any]) -> ImportRef:
         name=item.get("name"),
         alias=item.get("alias"),
         line=int(item.get("line") or 1),
+        kind=str(item.get("kind") or "import"),
     )
 
 
@@ -165,25 +166,25 @@ def _parse_imports(clean: str, line_starts: list[int]) -> list[ImportRef]:
     imports: list[ImportRef] = []
     seen: set[tuple[str, str | None, str | None, int]] = set()
 
-    def add(module: str, name: str | None, alias: str | None, offset: int) -> None:
+    def add(module: str, name: str | None, alias: str | None, offset: int, kind: str) -> None:
         line = _line_number(line_starts, offset)
-        key = (module, name, alias, line)
+        key = (module, name, alias, line, kind)
         if key not in seen:
             seen.add(key)
-            imports.append(ImportRef(module=module, name=name, alias=alias, line=line))
+            imports.append(ImportRef(module=module, name=name, alias=alias, line=line, kind=kind))
 
     for match in _STATIC_IMPORT_RE.finditer(clean):
         module = match.group("module")
         clause = match.group("clause")
         for name, alias in _names_from_import_clause(clause):
-            add(module, name, alias, match.start())
+            add(module, name, alias, match.start(), "import")
     for match in _EXPORT_FROM_RE.finditer(clean):
         module = match.group("module")
         for name, alias in _names_from_import_clause(match.group("clause")):
-            add(module, name, alias, match.start())
-    for regex in (_REQUIRE_RE, _DYNAMIC_IMPORT_RE):
+            add(module, name, alias, match.start(), "export")
+    for kind, regex in (("require", _REQUIRE_RE), ("dynamic_import", _DYNAMIC_IMPORT_RE)):
         for match in regex.finditer(clean):
-            add(match.group(1), None, None, match.start())
+            add(match.group(1), None, None, match.start(), kind)
     return imports
 
 

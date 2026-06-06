@@ -2,6 +2,12 @@ PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS nodes (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -89,4 +95,3 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
   fqn UNINDEXED,
   content
 );
-

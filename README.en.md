@@ -14,6 +14,7 @@ AGENTS.md
 .project-memory/config.yaml
 .project-memory/.gitignore
 .project-memory/README.md
+.project-memory/install.json
 tools/project_memory/
 pmem
 pmem.ps1
@@ -44,12 +45,26 @@ To force a fresh GitHub commit:
 pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
 ```
 
+With a managed vector runtime:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --with-vector
+```
+
 Check the install:
 
 ```bash
 ./pmem doctor
 ./pmem index --mode full
 ```
+
+## Upgrade
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target .
+```
+
+Upgrade refreshes managed files and runs migrations. Databases and runtime state under `.project-memory/` are preserved.
 
 ## Agent Workflow
 
@@ -85,14 +100,18 @@ Installer:
 pmem init --target .
 pmem install --target .
 pmem upgrade --target .
+pmem upgrade --target . --with-vector
 pmem uninstall --target . --keep-memory
 pmem uninstall --target . --purge
+pmem version
 ```
 
 Installed runtime:
 
 ```bash
+./pmem version
 ./pmem doctor
+./pmem migrate
 ./pmem index --mode full
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
@@ -105,6 +124,7 @@ Installed runtime:
 ## How It Works
 
 - SQLite stores the project graph: files, symbols, chunks, imports, calls, inheritance, failures.
+- Edges have `confidence`; more exact bindings receive higher scores.
 - SQLite FTS provides baseline chunk search.
 - Qdrant local + FastEmbed provide semantic search when available.
 - If Qdrant/FastEmbed are not available, deterministic fallback keeps install and indexing usable.
@@ -136,6 +156,13 @@ For semantic search, install dependencies into the Python used by `./pmem`:
 python3 -m pip install qdrant-client fastembed
 ./pmem doctor
 ./pmem index --mode full
+```
+
+Or install the managed runtime:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --with-vector
+./pmem doctor
 ```
 
 To use a specific Python:
