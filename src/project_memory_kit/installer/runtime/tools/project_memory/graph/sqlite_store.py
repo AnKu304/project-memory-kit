@@ -8,6 +8,19 @@ from typing import Any
 from tools.project_memory.hashing import stable_id
 from tools.project_memory.time_utils import utc_now
 
+JS_TS_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"}
+
+
+def _language_for_path(path: str) -> str | None:
+    suffix = Path(path).suffix
+    if suffix == ".py":
+        return "python"
+    if suffix in {".ts", ".tsx", ".mts", ".cts"}:
+        return "typescript"
+    if suffix in JS_TS_EXTENSIONS:
+        return "javascript"
+    return None
+
 
 class SQLiteGraphStore:
     def __init__(self, root: Path, db_path: Path):
@@ -154,7 +167,7 @@ class SQLiteGraphStore:
             name=fqn or path,
             fqn=f"{path}:{start_line}-{end_line}",
             path=path,
-            language="python" if path.endswith(".py") else None,
+            language=_language_for_path(path),
             start_line=start_line,
             end_line=end_line,
             properties={"content": content[:2000]},
@@ -170,4 +183,3 @@ class SQLiteGraphStore:
     def query(self, sql: str, args: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         with self.connect() as conn:
             return list(conn.execute(sql, args).fetchall())
-

@@ -60,7 +60,7 @@ def build_context(root: Path, task: str, base: str = "HEAD") -> str:
     lines.extend(f"- `{cmd}`" for cmd in tests)
     lines.extend(["", "## Low-Confidence Areas"])
     if impact["touched_symbols"]:
-        lines.append("- CALLS/REFERENCES edges are approximate for dynamic Python dispatch.")
+        lines.append("- CALLS/REFERENCES edges are approximate for dynamic dispatch and lexical parser fallback cases.")
     else:
         lines.append("- No touched symbols were mapped; run a full index or inspect the changed files manually.")
     lines.extend(["", "## Agent Checklist"])
@@ -78,4 +78,3 @@ def write_context(root: Path, task: str, base: str, out: Path) -> str:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     return str(out)
-

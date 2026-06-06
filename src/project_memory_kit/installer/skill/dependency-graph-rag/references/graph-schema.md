@@ -21,3 +21,7 @@ Error -> OCCURRED_IN -> File/Symbol/Test
 Error -> FIXED_BY -> ChangeSet/Fix
 ```
 
+## Parser Coverage
+
+- Python: modules, classes, functions, methods, imports, calls, inheritance, docstrings, line ranges.
+- JavaScript/TypeScript/JSX/TSX: modules, classes, functions, methods, imports, exports, require calls, dynamic imports, calls, JSX component references, line ranges.

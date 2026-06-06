@@ -11,11 +11,10 @@ def select_tests(root: Path, base: str = "HEAD") -> list[str]:
     commands: list[str] = []
     for item in impact["tests"]:
         target = item["target"]
-        if target.endswith(".py") or target.startswith("tests/"):
+        if target.endswith(".py"):
             commands.append(f"python -m unittest {target}")
         else:
             commands.append(target)
     if not commands:
         commands.extend(load_config(root).get("tests", {}).get("default_commands", ["python -m unittest discover"]))
     return list(dict.fromkeys(commands))
-

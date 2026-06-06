@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,89 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertIn("app.py", search.stdout)
+
+    def test_indexes_js_ts_import_graph(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            component_dir = root / "src" / "components"
+            app_dir = root / "src" / "app"
+            component_dir.mkdir(parents=True)
+            app_dir.mkdir(parents=True)
+            (root / "tsconfig.json").write_text(
+                '{"compilerOptions":{"baseUrl":".","paths":{"@/*":["src/*"]}}}',
+                encoding="utf-8",
+            )
+            (root / "package.json").write_text(
+                '{"scripts":{"test":"vitest run"}}',
+                encoding="utf-8",
+            )
+            (component_dir / "Button.tsx").write_text(
+                "export const Button = ({ label }: { label: string }) => {\n"
+                "  return <button>{label}</button>;\n"
+                "};\n",
+                encoding="utf-8",
+            )
+            (app_dir / "page.tsx").write_text(
+                "import { Button } from '@/components/Button';\n\n"
+                "export default function Page() {\n"
+                "  return <Button label=\"Home\" />;\n"
+                "}\n",
+                encoding="utf-8",
+            )
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+
+            index = subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertIn("indexed=", index.stdout)
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                symbol_count = conn.execute(
+                    "SELECT count(*) FROM nodes WHERE kind = 'Symbol' AND language = 'typescript'"
+                ).fetchone()[0]
+                imports = conn.execute(
+                    """
+                    SELECT dst.path
+                    FROM edges e
+                    JOIN nodes src ON src.id = e.src_id
+                    JOIN nodes dst ON dst.id = e.dst_id
+                    WHERE e.kind = 'IMPORTS' AND src.path = 'src/app/page.tsx'
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+
+            self.assertGreaterEqual(symbol_count, 2)
+            self.assertIn(("src/components/Button.tsx",), imports)
+
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            subprocess.run(["git", "add", "src", "tsconfig.json", "package.json"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            button_path = component_dir / "Button.tsx"
+            button_path.write_text(button_path.read_text(encoding="utf-8").replace("{label}", "{label.toUpperCase()}"), encoding="utf-8")
+
+            impact = subprocess.run(
+                [str(root / "pmem"), "impact", "--base", "HEAD", "--format", "markdown"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            self.assertIn("reverse import via @/components/Button", impact.stdout)
+            self.assertIn("npm test", impact.stdout)
 
 
 if __name__ == "__main__":

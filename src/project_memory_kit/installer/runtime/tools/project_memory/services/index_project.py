@@ -7,8 +7,15 @@ from tools.project_memory.git_diff import changed_files
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
 from tools.project_memory.ignore import should_index
+from tools.project_memory.parsers.js_ts import JsTsParser
+from tools.project_memory.parsers.js_ts_imports import JS_TS_EXTENSIONS, language_for_path as js_ts_language_for_path
 from tools.project_memory.parsers.python_ast import PythonAstParser
+from tools.project_memory.parsers.symbol_model import ParseResult, Symbol
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
+
+
+PYTHON_PARSER = PythonAstParser()
+JS_TS_PARSER = JsTsParser()
 
 
 def _iter_files(root: Path, mode: str) -> list[Path]:
@@ -24,6 +31,120 @@ def _lines_for(path: Path, start_line: int, end_line: int) -> str:
     return "\n".join(lines[max(start_line - 1, 0) : end_line])
 
 
+def _parser_for(path: Path):
+    if path.suffix == ".py":
+        return PYTHON_PARSER, "python", "python_ast"
+    if path.suffix in JS_TS_EXTENSIONS:
+        return JS_TS_PARSER, js_ts_language_for_path(path), "js_ts"
+    return None, _language_for_path(path), "text"
+
+
+def _language_for_path(path: Path) -> str | None:
+    if path.suffix == ".py":
+        return "python"
+    if path.suffix in JS_TS_EXTENSIONS:
+        return js_ts_language_for_path(path)
+    return None
+
+
+def _target_for_name(name: str, symbols: list[Symbol], symbol_ids: dict[str, str]) -> str | None:
+    if not name:
+        return None
+    candidates = [name]
+    if "." in name:
+        candidates.append(name.rsplit(".", 1)[-1])
+    for candidate in candidates:
+        for symbol in symbols:
+            if symbol.name == candidate or symbol.fqn.endswith("." + candidate) or symbol.fqn.endswith("." + name):
+                return symbol_ids.get(symbol.fqn)
+    return None
+
+
+def _index_parse_result(
+    path: Path,
+    rel: str,
+    file_id: str,
+    file_hash: str,
+    language: str,
+    parser_name: str,
+    result: ParseResult,
+    store: SQLiteGraphStore,
+    vectors: QdrantLocalStore,
+) -> list[str]:
+    module_id = store.upsert_node(kind="Module", name=result.module, fqn=result.module, path=rel, language=language)
+    store.upsert_edge(file_id, module_id, "DEFINES", evidence=rel)
+
+    symbol_ids: dict[str, str] = {}
+    for symbol in result.symbols:
+        symbol_id = store.upsert_node(
+            kind="Symbol",
+            name=symbol.name,
+            fqn=symbol.fqn,
+            path=rel,
+            language=language,
+            start_line=symbol.start_line,
+            end_line=symbol.end_line,
+            properties={
+                "kind": symbol.kind,
+                "signature": symbol.signature,
+                "docstring": symbol.docstring,
+                "decorators": symbol.decorators,
+                "bases": symbol.bases,
+            },
+        )
+        symbol_ids[symbol.fqn] = symbol_id
+        store.upsert_edge(file_id, symbol_id, "DEFINES", evidence=symbol.fqn)
+        chunk = _lines_for(path, symbol.start_line, symbol.end_line)
+        chunk_id = store.upsert_chunk(rel, symbol.fqn, symbol.start_line, symbol.end_line, chunk)
+        store.upsert_edge(chunk_id, symbol_id, "DESCRIBES", evidence=symbol.fqn)
+        vectors.upsert_chunk(
+            chunk_id,
+            chunk,
+            {
+                "chunk_id": chunk_id,
+                "node_id": chunk_id,
+                "file_path": rel,
+                "symbol_id": symbol_id,
+                "symbol_fqn": symbol.fqn,
+                "start_line": symbol.start_line,
+                "end_line": symbol.end_line,
+                "kind": "symbol",
+                "hash": file_hash,
+            },
+        )
+
+    for symbol in result.symbols:
+        symbol_id = symbol_ids.get(symbol.fqn)
+        if not symbol_id:
+            continue
+        for call in symbol.calls:
+            target = _target_for_name(call, result.symbols, symbol_ids)
+            if target and target != symbol_id:
+                store.upsert_edge(symbol_id, target, "CALLS", confidence=0.55, evidence=call)
+        for reference in symbol.references:
+            target = _target_for_name(reference, result.symbols, symbol_ids)
+            if target and target != symbol_id:
+                store.upsert_edge(symbol_id, target, "REFERENCES", confidence=0.35, evidence=reference)
+        for base in symbol.bases:
+            target = _target_for_name(base, result.symbols, symbol_ids)
+            if target:
+                store.upsert_edge(symbol_id, target, "INHERITS", confidence=0.65, evidence=base)
+
+    for item in result.imports:
+        if item.target_path:
+            target_path = Path(item.target_path)
+            target_id = store.upsert_node(
+                kind="File",
+                name=target_path.name,
+                fqn=item.target_path,
+                path=item.target_path,
+                language=_language_for_path(target_path),
+            )
+            store.upsert_edge(file_id, target_id, "IMPORTS", confidence=0.85, evidence=item.module)
+    store.update_file_state(rel, file_hash, parser_name, result.warnings)
+    return [f"{rel}: {warning}" for warning in result.warnings]
+
+
 def index_project(root: Path, mode: str = "changed") -> str:
     cfg = load_config(root)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
@@ -36,7 +157,6 @@ def index_project(root: Path, mode: str = "changed") -> str:
         collection=vector_cfg.get("collection", "project_memory_chunks"),
         model_name=vector_cfg.get("embedding_model"),
     )
-    parser = PythonAstParser()
 
     files = [path for path in _iter_files(root, mode) if should_index(root, path)]
     indexed = 0
@@ -53,80 +173,22 @@ def index_project(root: Path, mode: str = "changed") -> str:
             continue
 
         store.clear_generated_file_memory(rel)
+        parser, language, parser_name = _parser_for(path)
         file_id = store.upsert_node(
             kind="File",
             name=path.name,
             fqn=rel,
             path=rel,
-            language="python" if path.suffix == ".py" else None,
+            language=language,
             hash=file_hash,
         )
         store.upsert_edge(project_id, file_id, "CONTAINS", evidence=rel)
 
-        if path.suffix == ".py":
+        if parser is not None:
             result = parser.parse(root, path)
-            module_id = store.upsert_node(kind="Module", name=result.module, fqn=result.module, path=rel, language="python")
-            store.upsert_edge(file_id, module_id, "DEFINES", evidence=rel)
-
-            symbol_ids: dict[str, str] = {}
-            for symbol in result.symbols:
-                symbol_id = store.upsert_node(
-                    kind="Symbol",
-                    name=symbol.name,
-                    fqn=symbol.fqn,
-                    path=rel,
-                    language="python",
-                    start_line=symbol.start_line,
-                    end_line=symbol.end_line,
-                    properties={
-                        "kind": symbol.kind,
-                        "signature": symbol.signature,
-                        "docstring": symbol.docstring,
-                        "decorators": symbol.decorators,
-                        "bases": symbol.bases,
-                    },
-                )
-                symbol_ids[symbol.fqn] = symbol_id
-                store.upsert_edge(file_id, symbol_id, "DEFINES", evidence=symbol.fqn)
-                chunk = _lines_for(path, symbol.start_line, symbol.end_line)
-                chunk_id = store.upsert_chunk(rel, symbol.fqn, symbol.start_line, symbol.end_line, chunk)
-                store.upsert_edge(chunk_id, symbol_id, "DESCRIBES", evidence=symbol.fqn)
-                vectors.upsert_chunk(
-                    chunk_id,
-                    chunk,
-                    {
-                        "chunk_id": chunk_id,
-                        "node_id": chunk_id,
-                        "file_path": rel,
-                        "symbol_id": symbol_id,
-                        "symbol_fqn": symbol.fqn,
-                        "start_line": symbol.start_line,
-                        "end_line": symbol.end_line,
-                        "kind": "symbol",
-                        "hash": file_hash,
-                    },
-                )
-                for call in symbol.calls:
-                    target = next((sid for fqn, sid in symbol_ids.items() if fqn.endswith("." + call) or fqn.endswith(call)), None)
-                    if target:
-                        store.upsert_edge(symbol_id, target, "CALLS", confidence=0.55, evidence=call)
-                for base in symbol.bases:
-                    target = next((sid for fqn, sid in symbol_ids.items() if fqn.endswith("." + base) or fqn.endswith(base)), None)
-                    if target:
-                        store.upsert_edge(symbol_id, target, "INHERITS", confidence=0.65, evidence=base)
-
-            for item in result.imports:
-                if item.target_path:
-                    target_id = store.upsert_node(
-                        kind="File",
-                        name=Path(item.target_path).name,
-                        fqn=item.target_path,
-                        path=item.target_path,
-                        language="python",
-                    )
-                    store.upsert_edge(file_id, target_id, "IMPORTS", confidence=0.85, evidence=item.module)
-            warnings.extend(f"{rel}: {warning}" for warning in result.warnings)
-            store.update_file_state(rel, file_hash, "python_ast", result.warnings)
+            warnings.extend(
+                _index_parse_result(path, rel, file_id, file_hash, language or "text", parser_name, result, store, vectors)
+            )
         else:
             content = path.read_text(encoding="utf-8", errors="replace")
             line_count = max(1, len(content.splitlines()))

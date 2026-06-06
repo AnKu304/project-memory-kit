@@ -34,7 +34,7 @@
 - Graph memory: SQLite property graph.
 - Vector memory: Qdrant local + FastEmbed в auto/strict режиме, deterministic fallback для offline bootstrap.
 - Search: SQLite FTS всегда доступен; Qdrant semantic hits добавляются к `pmem search`, когда vector backend доступен.
-- Parser: Python `ast` + `symtable`.
+- Parser: Python `ast` + `symtable`; JS/TS/JSX/TSX parser backend with TypeScript compiler API when available and lexical fallback otherwise.
 - CLI: `pmem`.
 - Agent protocol: `AGENTS.md` managed block.
 - Agent skill: `.agents/skills/dependency-graph-rag/`.
@@ -243,6 +243,7 @@ Installed project runtime:
 - не индексирует `.env`, private keys, tokens, credentials, secrets и binary files;
 - хеширует файлы и пропускает неизмененные;
 - для Python извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings/line ranges;
+- для JavaScript/TypeScript/JSX/TSX извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references/line ranges;
 - сохраняет nodes/edges/chunks в SQLite;
 - пишет FTS chunks;
 - пишет vector records в `.project-memory/qdrant/`: Qdrant local при доступных зависимостях, иначе deterministic fallback records.
@@ -331,5 +332,6 @@ PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest disco
 ## Ограничения Первой Версии
 
 - Базовая память работает для любых текстовых проектов: индексирует файлы, chunks, поиск, git diff, context reports, тестовые команды и failure memory.
-- Глубокий symbol graph в первой версии реализован для Python через `ast` + `symtable`.
-- В проектах на JavaScript, TypeScript, Next.js и других стеках память все равно полезна на уровне файлов, текста, контекста изменений и истории ошибок. Для такой же точной карты символов, импортов и вызовов под эти языки нужно добавить отдельный parser backend.
+- Глубокий symbol graph реализован для Python и для JS/TS/JSX/TSX.
+- JS/TS backend использует TypeScript compiler API, если в проекте доступны `node` и пакет `typescript`; иначе включается встроенный lexical parser, который сохраняет imports/symbols/calls на базовом уровне.
+- Для языков вне Python и JS/TS память все равно полезна на уровне файлов, текста, контекста изменений и истории ошибок. Для такой же точной карты символов, импортов и вызовов под эти языки нужно добавить отдельный parser backend.

@@ -11,6 +11,14 @@ paths:
 indexing:
   include_extensions:
     - .py
+    - .js
+    - .jsx
+    - .ts
+    - .tsx
+    - .mjs
+    - .cjs
+    - .mts
+    - .cts
     - .md
     - .txt
     - .toml
