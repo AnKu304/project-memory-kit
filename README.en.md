@@ -79,7 +79,7 @@ Before editing:
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
-Context stays bounded: short snippets, ids, and paths to full records. Prefer local commands for large files and logs, then pass only the useful summary unless full text is necessary.
+Context stays bounded: short snippets, ids, and paths to full records. Agents should inspect large files, logs, and reports with local tools first, then bring only relevant findings and short excerpts into the working context. Full text is opened only when the local summary is insufficient.
 
 After editing:
 

@@ -65,7 +65,7 @@ For tasks involving "why", rejected approaches, architecture choices, storage ch
 
 Read the retrieved full Markdown files before relying on a decision or rejected path. Rationale stores verified decisions, alternatives, and evidence; it must not store hidden chain-of-thought.
 
-Keep context bounded. Use `pmem` reports, targeted search, local tests, and concise summaries first. Do not paste large files or logs into the chat unless local reports are insufficient or the failure is ambiguous.
+Keep context bounded. Inspect large files, logs, reports, and test output through local tools first. Bring only relevant findings, short excerpts, ids, and paths into the working context. Open or transmit full text only when local summaries are insufficient or the failure is ambiguous.
 
 Extract:
 
@@ -108,7 +108,7 @@ Run:
 
 Run the returned targeted test commands.
 
-Use local project tooling and temporary sandboxes for verification when available. Save long failure logs under `.project-memory/logs/` and record them with `./pmem record-failure`; summarize only the relevant result.
+Use local project tooling and temporary sandboxes for verification when available. Save long failure logs under `.project-memory/logs/` and record them with `./pmem record-failure`; inspect logs locally and summarize only the relevant result.
 
 If durable research, architecture, SEO, design, UX, product, or content context changed:
 

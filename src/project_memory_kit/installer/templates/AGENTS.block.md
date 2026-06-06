@@ -21,7 +21,7 @@ Before any meaningful code, config, schema, dependency, API, test, build, routin
 
 Read `.project-memory/reports/CHANGE_CONTEXT.md` before editing. Identify target files, target symbols, direct dependencies, reverse dependencies, affected tests, related previous failures, architecture constraints, and low-confidence graph areas.
 
-Keep context bounded. Prefer local `pmem` reports, targeted searches, local tests, and concise summaries over pasting large files or logs into the chat. Open full files, full knowledge notes, or long logs only when the short local reports are insufficient.
+Keep context bounded. Use local tools to inspect large files, logs, reports, and test output. Bring only relevant findings, short excerpts, ids, and paths into the working context. Open full files, full knowledge/rationale notes, or long logs only when local summaries are insufficient.
 
 For research, product, UX, design, SEO, architecture, content, positioning, or other principle-heavy work, also run:
 
@@ -49,7 +49,7 @@ After editing, run:
 
 Run the targeted test commands returned by `./pmem tests`.
 
-Use project-local tooling and sandboxes for verification whenever possible. Summarize command results; do not send long raw outputs unless they are necessary to diagnose an ambiguous failure.
+Use project-local tooling and sandboxes for verification whenever possible. Inspect command output locally and summarize the relevant result; do not send long raw outputs unless they are necessary to diagnose an ambiguous failure.
 
 When a durable research finding, architecture note, SEO rule, design principle, UX rule, product mechanic, or content rule changes, update project knowledge:
 

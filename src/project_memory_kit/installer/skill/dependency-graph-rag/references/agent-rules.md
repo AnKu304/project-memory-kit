@@ -10,7 +10,7 @@ Use `./pmem knowledge update` when durable project principles change. Retire obs
 
 Use `./pmem rationale update` when durable causes or rejected alternatives change. Retire obsolete rationale instead of keeping conflicting current explanations.
 
-Keep model context bounded. Prefer local reports, local tests, targeted search, and short summaries. Open or transmit full documents and long logs only when the bounded local workflow is insufficient.
+Keep model context bounded. Inspect large files, logs, reports, and test output through local tools first. Bring only relevant findings, short excerpts, ids, and paths into the working context. Open or transmit full documents and long logs only when the bounded local workflow is insufficient.
 
 Rationale records must contain verified decisions, alternatives, and evidence. Do not store hidden chain-of-thought.
 
