@@ -184,7 +184,7 @@ When it is obsolete:
 
 ## Rationale Layer
 
-The rationale layer is used for "why", rejected approaches, error causes, experiments, and project invariants. It is not a place for hidden agent reasoning: records should contain verified decisions, alternatives, and evidence.
+The rationale layer helps avoid repeating dead ends. It records chosen decisions, rejected approaches, error causes, experiments, and project invariants. Each record should point to facts: a test, log, diff, file, failure, or commit.
 
 Example:
 
