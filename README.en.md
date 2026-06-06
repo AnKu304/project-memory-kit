@@ -145,36 +145,6 @@ PYTHON=/path/to/python ./pmem doctor
 PYTHON=/path/to/python ./pmem index --mode full
 ```
 
-## What To Commit
-
-Commit:
-
-```text
-AGENTS.md
-.agents/skills/dependency-graph-rag/
-.project-memory/config.yaml
-.project-memory/.gitignore
-.project-memory/README.md
-tools/project_memory/
-pmem
-pmem.ps1
-.gitignore
-```
-
-Do not commit:
-
-```text
-.project-memory/graph.sqlite
-.project-memory/graph.sqlite-*
-.project-memory/qdrant/
-.project-memory/runtime/
-.project-memory/logs/
-.project-memory/reports/
-.project-memory/cache/
-.project-memory/models/
-.project-memory/tmp/
-```
-
 ## Development
 
 Run the test suite:
