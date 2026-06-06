@@ -14,10 +14,14 @@ def managed_block(body: str) -> str:
     return f"{BEGIN}\n{body}\n{END}\n"
 
 
-def merge_agents_block(path: Path, body: str, report: InstallReport) -> None:
+def merge_agents_block(path: Path, body: str, report: InstallReport, full_template: str | None = None) -> None:
     block = managed_block(body)
     if not path.exists():
-        path.write_text(block, encoding="utf-8")
+        if full_template:
+            content = full_template.rstrip() + "\n\n" + block
+        else:
+            content = block
+        path.write_text(content, encoding="utf-8")
         report.add_path("created", path)
         return
 
@@ -45,4 +49,3 @@ def remove_agents_block(path: Path, report: InstallReport) -> None:
     if updated != original:
         path.write_text(updated, encoding="utf-8")
         report.add_path("updated", path)
-

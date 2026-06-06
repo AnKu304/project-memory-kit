@@ -19,8 +19,8 @@ class ExistingAgentsTest(unittest.TestCase):
             self.assertIn("<!-- PMEM:BEGIN -->", content)
             self.assertIn("Local Project Memory Protocol", content)
             self.assertIn("<!-- PMEM:END -->", content)
+            self.assertNotIn("This file is the project instruction hub", content)
 
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -109,7 +109,12 @@ def install_project(
     write_managed_file(template_path("README.project-memory.md"), project_memory / "README.md", report)
 
     merge_gitignore(root / ".gitignore", read_template("root.gitignore.block"), report)
-    merge_agents_block(root / "AGENTS.md", read_template("AGENTS.block.md"), report)
+    merge_agents_block(
+        root / "AGENTS.md",
+        read_template("AGENTS.block.md"),
+        report,
+        full_template=read_template("AGENTS.full.md"),
+    )
 
     copy_tree(skill_root(), root / ".agents" / "skills" / "dependency-graph-rag", report)
     copy_tree(runtime_root() / "tools" / "project_memory", root / "tools" / "project_memory", report)

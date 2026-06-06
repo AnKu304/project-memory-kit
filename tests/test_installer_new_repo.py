@@ -24,6 +24,12 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertTrue((root / ".project-memory/config.yaml").exists())
             self.assertTrue((root / "tools/project_memory/cli.py").exists())
             self.assertTrue((root / "pmem").exists())
+            agents = (root / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn("This file is the project instruction hub", agents)
+            self.assertIn("## Project Rules", agents)
+            self.assertIn("## External Skills", agents)
+            self.assertIn("PROJECT_RULES.md", agents)
+            self.assertIn("<!-- PMEM:BEGIN -->", agents)
 
             doctor = subprocess.run([str(root / "pmem"), "doctor"], cwd=root, text=True, stdout=subprocess.PIPE)
             self.assertEqual(doctor.returncode, 0, doctor.stdout)
@@ -38,4 +44,3 @@ class InstallerNewRepoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
