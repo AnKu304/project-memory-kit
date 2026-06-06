@@ -1,96 +1,12 @@
 # project-memory-kit
 
-`project-memory-kit` устанавливает локальную проектную память для coding agents в любой новый или уже существующий репозиторий.
+English version: [README.en.md](README.en.md)
 
-Идея простая: если один проект ведется в нескольких чатах под разные задачи, агент не должен каждый раз начинать с нуля и править файлы без учета зависимостей. В проект добавляется общий локальный слой памяти: граф файлов/символов/импортов, поиск по chunks, impact analysis, контекст изменений, выбор тестов и память о падениях.
+`project-memory-kit` добавляет в репозиторий локальную память для агентов, которые пишут код.
 
-## Что Это Решает
+Память хранится внутри проекта, поэтому несколько чатов могут работать над одним кодом без потери контекста: агент видит файлы, символы, импорты, обратные зависимости, релевантные тесты и прошлые падения.
 
-Обычная проблема агента:
-
-```text
-прочитал задачу -> открыл очевидный файл -> поправил -> не учел зависимости
-```
-
-Желаемый процесс:
-
-```text
-прочитал задачу
--> обновил локальную память проекта
--> нашел затронутые файлы и символы
--> увидел reverse imports/callers/tests/старые failures
--> собрал CHANGE_CONTEXT.md
--> сделал минимальную правку
--> пересчитал impact
--> запустил целевые тесты
--> записал failure memory, если тест упал
--> отчитался о рисках
-```
-
-Такой процесс особенно полезен, когда один и тот же проект открывается в нескольких Codex/ChatGPT чатах: память лежит в проекте, а не в конкретном диалоге.
-
-## Финальный Стек
-
-- Graph memory: SQLite property graph.
-- Vector memory: Qdrant local + FastEmbed в auto/strict режиме, deterministic fallback для offline bootstrap.
-- Search: SQLite FTS всегда доступен; Qdrant semantic hits добавляются к `pmem search`, когда vector backend доступен.
-- Parser: Python `ast` + `symtable`; JS/TS/JSX/TSX parser backend with TypeScript compiler API when available and lexical fallback otherwise.
-- CLI: `pmem`.
-- Agent protocol: `AGENTS.md` managed block.
-- Agent skill: `.agents/skills/dependency-graph-rag/`.
-
-## Важное Разделение
-
-`project-memory-kit` устанавливает только:
-
-```text
-.project-memory/
-tools/project_memory/
-.agents/skills/dependency-graph-rag/
-AGENTS.md managed block
-pmem
-pmem.ps1
-```
-
-Сторонние skills для дизайна, frontend, Next.js, документов и других задач ставятся отдельно обычным способом, например:
-
-```bash
-npx skills add https://github.com/anthropics/skills --skill frontend-design
-npx skills add https://github.com/vercel-labs/next-skills --skill next-best-practices
-```
-
-В `AGENTS.md` есть пользовательская секция, где можно описать, когда применять такие skills в конкретном проекте.
-
-## Соответствие Codex Skills
-
-Skill `dependency-graph-rag` сделан по текущей документации Codex Skills:
-
-- `SKILL.md` содержит обязательные поля `name` и `description`;
-- инструкции лежат в самом `SKILL.md`;
-- дополнительные материалы лежат в `references/`;
-- UI metadata для Codex app лежит в `agents/openai.yaml`;
-- описание front-loaded, чтобы Codex мог выбрать skill по implicit invocation даже при сокращении списка skills.
-
-Использованные источники:
-
-- [Using skills in Codex](https://developers.openai.com/codex/skills)
-- [Create custom skills in Codex](https://developers.openai.com/codex/skills#create-a-skill)
-- [openai/skills](https://github.com/openai/skills)
-
-## Установка В Новый Проект
-
-Один раз создайте и опубликуйте этот репозиторий на GitHub. Потом в любом новом проекте:
-
-```bash
-mkdir my-app
-cd my-app
-git init
-pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
-```
-
-Если нужно гарантированно взять свежий commit из GitHub, добавьте `--no-cache` перед `--spec`.
-
-После установки в проекте появятся:
+## Что появится в проекте
 
 ```text
 AGENTS.md
@@ -104,58 +20,145 @@ pmem.ps1
 .gitignore
 ```
 
-Если `AGENTS.md` отсутствует, installer создает полноценный шаблон-инструкцию, а не только memory-блок. В нем есть места для:
+Если `AGENTS.md` уже есть, installer сохраняет пользовательский текст и обновляет только managed-блок:
 
-- описания проекта;
-- ссылок на `README.md`, `PROJECT_RULES.md`, `TASK.md`, `RULES.md`;
-- пользовательских правил кодинга, архитектуры, безопасности и деплоя;
-- правил, когда использовать внешние skills;
-- managed-блока `project-memory-kit`.
+```text
+<!-- PMEM:BEGIN -->
+...
+<!-- PMEM:END -->
+```
 
-Если `AGENTS.md` уже существует, installer сохраняет весь пользовательский текст и добавляет или обновляет только managed-блок `<!-- PMEM:BEGIN --> ... <!-- PMEM:END -->`.
+Внешние skills не управляются этим проектом. Их можно ставить отдельно и описывать правила их использования в `AGENTS.md`.
+
+## Установка
+
+В корне проекта:
+
+```bash
+pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+```
+
+Чтобы точно взять свежий commit:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+```
 
 Проверка:
 
 ```bash
 ./pmem doctor
 ./pmem index --mode full
-./pmem impact --base HEAD --format markdown
-./pmem context --task "test task" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
-## Установка В Существующий Проект
+## Рабочий цикл агента
 
-В корне существующего repo:
+Перед правками:
 
 ```bash
-pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+./pmem doctor
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem context --task "<task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
+
+После правок:
+
+```bash
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem tests --base HEAD
+```
+
+При падении теста:
+
+```bash
+mkdir -p .project-memory/logs
+./pmem record-failure --command "<failed command>" --log-file "<log path>"
+```
+
+## Команды
 
 Installer:
 
-- не создает вложенную папку проекта;
-- не перетирает существующий `AGENTS.md`;
-- обновляет только блок `<!-- PMEM:BEGIN --> ... <!-- PMEM:END -->`;
-- при создании нового `AGENTS.md` добавляет user-editable секции для проектных правил и внешних skills;
-- не трогает внешние skills в `.agents/skills/*`;
-- устанавливает только `.agents/skills/dependency-graph-rag/`;
-- безопасно merge-ит `.gitignore`;
-- создает локальный runtime `tools/project_memory/`;
-- создает wrappers `./pmem` и `./pmem.ps1`.
+```bash
+pmem init --target .
+pmem install --target .
+pmem upgrade --target .
+pmem uninstall --target . --keep-memory
+pmem uninstall --target . --purge
+```
 
-## Что Коммитить
+В установленном проекте:
+
+```bash
+./pmem doctor
+./pmem index --mode full
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem context --task "описание задачи"
+./pmem tests --base HEAD
+./pmem search --query "payment validation" --limit 10
+./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
+```
+
+## Как работает
+
+- SQLite хранит граф проекта: файлы, символы, chunks, imports, calls, inheritance, failures.
+- SQLite FTS дает базовый поиск по chunks.
+- Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
+- Если Qdrant/FastEmbed недоступны, включается deterministic fallback, чтобы установка и индексирование не ломались.
+- Python parser извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings.
+- JS/TS parser извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references.
+- Для JS/TS используется TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе работает встроенный lexical parser.
+- Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
+
+## Vector Backend
+
+Настройка лежит в `.project-memory/config.yaml`:
+
+```yaml
+vector:
+  backend: auto
+  collection: project_memory_chunks
+  embedding_model: null
+```
+
+Режимы:
+
+- `auto`: использовать Qdrant/FastEmbed, если они доступны; иначе fallback.
+- `qdrant`: требовать Qdrant/FastEmbed и падать при их отсутствии.
+- `fallback`: не использовать Qdrant/FastEmbed.
+
+Для semantic search установите зависимости в Python, который запускает `./pmem`:
+
+```bash
+python3 -m pip install qdrant-client fastembed
+./pmem doctor
+./pmem index --mode full
+```
+
+Если нужен другой Python:
+
+```bash
+PYTHON=/path/to/python ./pmem doctor
+PYTHON=/path/to/python ./pmem index --mode full
+```
+
+## Что коммитить
 
 Коммитить:
 
-```bash
-git add AGENTS.md \
-  .agents/skills/dependency-graph-rag \
-  .project-memory/config.yaml \
-  .project-memory/.gitignore \
-  .project-memory/README.md \
-  tools/project_memory \
-  pmem pmem.ps1 .gitignore
-git commit -m "Add local project memory"
+```text
+AGENTS.md
+.agents/skills/dependency-graph-rag/
+.project-memory/config.yaml
+.project-memory/.gitignore
+.project-memory/README.md
+tools/project_memory/
+pmem
+pmem.ps1
+.gitignore
 ```
 
 Не коммитить:
@@ -172,166 +175,10 @@ git commit -m "Add local project memory"
 .project-memory/tmp/
 ```
 
-Эти пути добавляются в managed-блок `.gitignore`.
+## Разработка
 
-## Обязательный Workflow Агента
-
-Перед осмысленными правками:
+Проверка этого репозитория:
 
 ```bash
-./pmem doctor
-./pmem index --mode changed
-./pmem impact --base HEAD --format markdown
-./pmem context --task "<current task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:src/project_memory_kit/installer/runtime python3 -m unittest discover -s tests
 ```
-
-Агент обязан прочитать:
-
-```text
-.project-memory/reports/CHANGE_CONTEXT.md
-```
-
-После правок:
-
-```bash
-./pmem index --mode changed
-./pmem impact --base HEAD --format markdown
-./pmem tests --base HEAD
-```
-
-При падении тестов:
-
-```bash
-mkdir -p .project-memory/logs
-./pmem record-failure --command "<failed command>" --log-file "<log path>"
-./pmem context --task "fix failing tests after current change" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
-```
-
-## Команды
-
-Installer-level:
-
-```bash
-pmem init --target .
-pmem install --target .
-pmem upgrade --target .
-pmem uninstall --target . --keep-memory
-pmem uninstall --target . --purge
-```
-
-Installed project runtime:
-
-```bash
-./pmem init
-./pmem doctor
-./pmem index --mode full
-./pmem index --mode changed
-./pmem impact --base HEAD --format markdown
-./pmem impact --base HEAD --format json
-./pmem context --task "описание задачи" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
-./pmem tests --base HEAD
-./pmem record-failure --command "python -m unittest" --log-file ".project-memory/logs/test.log"
-./pmem search --query "payment validation" --limit 10
-```
-
-## Как Работает Индексация
-
-Индексатор:
-
-- уважает `.project-memory/config.yaml`;
-- пропускает `.git`, `.project-memory`, virtualenv, dependency dirs, build dirs, caches;
-- не индексирует `.env`, private keys, tokens, credentials, secrets и binary files;
-- хеширует файлы и пропускает неизмененные;
-- для Python извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings/line ranges;
-- для JavaScript/TypeScript/JSX/TSX извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references/line ranges;
-- сохраняет nodes/edges/chunks в SQLite;
-- пишет FTS chunks;
-- пишет vector records в `.project-memory/qdrant/`: Qdrant local при доступных зависимостях, иначе deterministic fallback records.
-
-## Vector Backend
-
-В `.project-memory/config.yaml` есть секция:
-
-```yaml
-vector:
-  backend: auto
-  collection: project_memory_chunks
-  embedding_model: null
-```
-
-Режимы:
-
-- `auto`: пробует Qdrant local + FastEmbed; если в Python-окружении `./pmem` нет зависимостей или модель недоступна, использует deterministic fallback.
-- `qdrant`: строгий режим; если Qdrant/FastEmbed недоступны, `./pmem index` и `./pmem search` должны упасть, а не тихо перейти на fallback.
-- `fallback`: не использует Qdrant/FastEmbed; подходит для bootstrap, тестов и полностью offline-установки.
-
-Почему Qdrant/FastEmbed не forced по умолчанию: установленный `./pmem` запускается через Python проекта или системный `python3`, а не через `pipx` venv инсталлятора. Поэтому эти пакеты должны быть установлены именно в то Python-окружение, которое запускает `./pmem`.
-
-Для production semantic search установите зависимости в Python, который использует `./pmem`:
-
-```bash
-python3 -m pip install qdrant-client fastembed
-./pmem doctor
-./pmem index --mode full
-./pmem search --query "payment validation"
-```
-
-Если проект использует отдельный Python:
-
-```bash
-PYTHON=/path/to/project/python ./pmem doctor
-PYTHON=/path/to/project/python ./pmem index --mode full
-```
-
-`./pmem doctor` показывает активное состояние vector backend.
-
-## Graph Schema
-
-Node kinds:
-
-```text
-Project, Directory, File, Module, Symbol, Chunk, Layer, Test, Command, Error, Failure, Fix, ChangeSet, Decision
-```
-
-Edge kinds:
-
-```text
-CONTAINS, DEFINES, IMPORTS, CALLS, INHERITS, REFERENCES, BELONGS_TO_LAYER, TESTS, COVERS_FILE, DESCRIBES, MENTIONS, TOUCHES, OCCURRED_IN, FIXED_BY, CHANGED, CONSTRAINS
-```
-
-Базовые связи:
-
-```text
-File -> DEFINES -> Symbol
-Chunk -> DESCRIBES -> Symbol
-Chunk -> DESCRIBES -> File
-Test -> TESTS -> Symbol
-Test -> COVERS_FILE -> File
-ChangeSet -> TOUCHES -> File/Symbol
-Error -> OCCURRED_IN -> File/Symbol/Test
-Error -> FIXED_BY -> ChangeSet/Fix
-```
-
-## Локальная Проверка Этого Репозитория
-
-```bash
-PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest discover -s tests
-```
-
-Проверка установки в temp repo покрывает:
-
-- создание boilerplate;
-- сохранение существующего `AGENTS.md`;
-- замену только managed-блока;
-- safe merge `.gitignore`;
-- сохранность внешних skills;
-- работу `./pmem doctor`;
-- работу `./pmem index`;
-- генерацию `CHANGE_CONTEXT.md`.
-
-## Ограничения Первой Версии
-
-- Базовая память работает для любых текстовых проектов: индексирует файлы, chunks, поиск, git diff, context reports, тестовые команды и failure memory.
-- Глубокий symbol graph реализован для Python и для JS/TS/JSX/TSX.
-- JS/TS backend использует TypeScript compiler API, если в проекте доступны `node` и пакет `typescript`; иначе включается встроенный lexical parser, который сохраняет imports/symbols/calls на базовом уровне.
-- Для языков вне Python и JS/TS память все равно полезна на уровне файлов, текста, контекста изменений и истории ошибок. Для такой же точной карты символов, импортов и вызовов под эти языки нужно добавить отдельный parser backend.
