@@ -106,6 +106,8 @@ git init
 pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
 ```
 
+Если нужно гарантированно взять свежий commit из GitHub, добавьте `--no-cache` перед `--spec`.
+
 После установки в проекте появятся:
 
 ```text
