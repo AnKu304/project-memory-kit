@@ -16,6 +16,7 @@ AGENTS.md
 .project-memory/README.md
 .project-memory/install.json
 .project-memory/knowledge/
+.project-memory/rationale/
 tools/project_memory/
 pmem
 pmem.ps1
@@ -75,7 +76,7 @@ Before editing:
 ./pmem doctor
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
-./pmem context --task "<task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
 Context stays bounded: short snippets, ids, and paths to full records. Prefer local commands for large files and logs, then pass only the useful summary unless full text is necessary.
@@ -125,9 +126,16 @@ Installed runtime:
 ./pmem knowledge context --task "redesign product page"
 ./pmem knowledge show --id resource-mechanics
 ./pmem knowledge retire --id old-design-rules
+./pmem rationale add --type decision --title "Use SQLite" --file notes/rationale/sqlite.md
+./pmem rationale update --id use-sqlite --file notes/rationale/sqlite.md
+./pmem rationale search --query "why not postgres"
+./pmem rationale context --task "change memory database"
+./pmem rationale show --id use-sqlite
+./pmem rationale retire --id old-storage-choice
 ./pmem tests --base HEAD
 ./pmem search --query "payment validation" --limit 10
 ./pmem search --query "pricing SEO" --layer knowledge
+./pmem search --query "why sqlite" --layer rationale
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ```
 
@@ -137,6 +145,9 @@ Installed runtime:
 - The knowledge layer stores research, architecture, SEO, design, UX, product mechanics, and other project principles.
 - Full knowledge records live in `.project-memory/knowledge/**/*.md`; SQLite stores metadata, status, versions, and links.
 - Knowledge search uses only `current` records by default. When a principle changes, use `knowledge update` instead of creating a competing current record.
+- The rationale layer stores verified causes: decisions, rejected alternatives, experiments, invariants, and evidence.
+- Full rationale records live in `.project-memory/rationale/**/*.md`; context receives only short snippets, ids, score/reason, and paths to full records.
+- Search is ranked locally from FTS/vector candidates, score, source, and matched terms. Full records are opened only when needed.
 - Edges have `confidence`; more exact bindings receive higher scores.
 - SQLite FTS provides baseline chunk search.
 - Qdrant local + FastEmbed provide semantic search when available.
@@ -169,6 +180,29 @@ When it is obsolete:
 
 ```bash
 ./pmem knowledge retire --id old-product-page-seo
+```
+
+## Rationale Layer
+
+Use this for "why", rejected approaches, error causes, experiments, and project invariants. It is not a place for hidden agent reasoning: records should contain verified decisions, alternatives, and evidence.
+
+Example:
+
+```bash
+./pmem rationale add --type decision --title "Use SQLite as Source of Truth" --file docs/rationale/sqlite.md --why "local-first and upgrade-safe" --rejected "Postgres: unnecessary server dependency" --evidence "tests: upgrade preserves graph.sqlite"
+./pmem rationale context --task "replace local database"
+```
+
+When a cause changes:
+
+```bash
+./pmem rationale update --id use-sqlite-as-source-of-truth --file docs/rationale/sqlite.md
+```
+
+When it is obsolete:
+
+```bash
+./pmem rationale retire --id old-storage-rationale
 ```
 
 ## Vector Backend

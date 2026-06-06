@@ -6,20 +6,23 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.knowledge import search_knowledge
+from tools.project_memory.services.rationale import search_rationale
 from tools.project_memory.services.search import search
 from tools.project_memory.services.test_selector import select_tests
 
 
-def build_context(root: Path, task: str, base: str = "HEAD") -> str:
+def build_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = False) -> str:
     impact = analyze_impact(root, base)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
     cfg = load_config(root)
     max_chunks = int(cfg.get("memory", {}).get("max_context_chunks", 8))
     max_knowledge = int(cfg.get("knowledge", {}).get("max_context_items", 5))
+    max_rationale = int(cfg.get("rationale", {}).get("max_context_items", 5))
     query = task if task.strip() else " ".join(impact["changed_files"])
     search_rows = search(root, query, max_chunks) if query else []
     knowledge_rows = search_knowledge(root, query, max_knowledge) if query else []
+    rationale_rows = search_rationale(root, query, max_rationale) if query else []
     tests = select_tests(root, base)
     failures = store.query(
         """
@@ -36,11 +39,23 @@ def build_context(root: Path, task: str, base: str = "HEAD") -> str:
         "## Task",
         task or "(not provided)",
         "",
+    ]
+    if reset_task:
+        lines.extend(
+            [
+                "## Task Boundary",
+                "Treat this as a new task. Do not carry prior chat conclusions unless they are confirmed by current files, pmem context, knowledge, rationale, failures, or tests.",
+                "",
+            ]
+        )
+    lines.extend(
+        [
         "## Diff Summary",
         format_impact(impact, "markdown").strip(),
         "",
         "## Retrieved Graph Chunks",
-    ]
+        ]
+    )
     if search_rows:
         for item in search_rows:
             lines.append(f"- `{item['path']}` `{item['fqn']}`: {item['snippet']}")
@@ -55,6 +70,16 @@ def build_context(root: Path, task: str, base: str = "HEAD") -> str:
             )
     else:
         lines.append("- No current knowledge entries retrieved.")
+    lines.extend(["", "## Retrieved Rationale"])
+    if rationale_rows:
+        for item in rationale_rows:
+            why = f" why: {item['why']}" if item.get("why") else ""
+            lines.append(
+                f"- [{item['type']}] {item['title']} v{item['version']} "
+                f"`{item['rationale_id']}`:{why} {item['snippet']} (full: `{item['path']}`)"
+            )
+    else:
+        lines.append("- No current rationale entries retrieved.")
     lines.extend(["", "## Related Previous Failures"])
     if failures:
         for row in failures:
@@ -85,8 +110,8 @@ def build_context(root: Path, task: str, base: str = "HEAD") -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_context(root: Path, task: str, base: str, out: Path) -> str:
-    content = build_context(root, task, base)
+def write_context(root: Path, task: str, base: str, out: Path, reset_task: bool = False) -> str:
+    content = build_context(root, task, base, reset_task=reset_task)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     return str(out)

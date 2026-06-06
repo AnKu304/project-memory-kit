@@ -176,6 +176,9 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str) -
         "knowledge_paths": [
             ".project-memory/knowledge/",
         ],
+        "rationale_paths": [
+            ".project-memory/rationale/",
+        ],
         "state_paths": [
             ".project-memory/install.json",
             ".project-memory/graph.sqlite",

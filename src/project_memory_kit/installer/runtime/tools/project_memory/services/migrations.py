@@ -10,6 +10,7 @@ from tools.project_memory.version import GRAPH_SCHEMA_VERSION
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, "initial_graph_schema"),
     (2, "knowledge_layer_schema"),
+    (3, "rationale_layer_schema"),
 )
 
 

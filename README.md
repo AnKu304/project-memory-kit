@@ -16,6 +16,7 @@ AGENTS.md
 .project-memory/README.md
 .project-memory/install.json
 .project-memory/knowledge/
+.project-memory/rationale/
 tools/project_memory/
 pmem
 pmem.ps1
@@ -75,7 +76,7 @@ Upgrade обновляет managed-файлы и запускает migrations. 
 ./pmem doctor
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
-./pmem context --task "<task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
 Контекст ограничивается короткими выдержками, id и путями к полной версии. Большие файлы и логи лучше проверять локальными командами и передавать агенту только итог, если полного текста не требуется.
@@ -125,9 +126,16 @@ pmem version
 ./pmem knowledge context --task "redesign product page"
 ./pmem knowledge show --id resource-mechanics
 ./pmem knowledge retire --id old-design-rules
+./pmem rationale add --type decision --title "Use SQLite" --file notes/rationale/sqlite.md
+./pmem rationale update --id use-sqlite --file notes/rationale/sqlite.md
+./pmem rationale search --query "why not postgres"
+./pmem rationale context --task "change memory database"
+./pmem rationale show --id use-sqlite
+./pmem rationale retire --id old-storage-choice
 ./pmem tests --base HEAD
 ./pmem search --query "payment validation" --limit 10
 ./pmem search --query "pricing SEO" --layer knowledge
+./pmem search --query "why sqlite" --layer rationale
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ```
 
@@ -137,6 +145,9 @@ pmem version
 - Knowledge layer хранит исследования, архитектуру, SEO, дизайн, UX, продуктовые механики и другие проектные принципы.
 - Полные версии knowledge-записей лежат в `.project-memory/knowledge/**/*.md`; SQLite хранит метаданные, статусы, версии и связи.
 - Поиск по knowledge по умолчанию использует только `current` записи. При изменении принципа используйте `knowledge update`, а не вторую конкурирующую запись.
+- Rationale layer хранит проверяемые причины: решения, отклоненные варианты, эксперименты, инварианты и evidence.
+- Полные версии rationale-записей лежат в `.project-memory/rationale/**/*.md`; в контекст попадают только короткие выдержки, id, score/reason и путь к полной версии.
+- Поиск ранжируется локально по FTS/vector candidates, score, source и matched terms. Полные записи открываются только при необходимости.
 - У связей есть `confidence`; более точные bindings получают более высокий score.
 - SQLite FTS дает базовый поиск по chunks.
 - Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
@@ -169,6 +180,29 @@ pmem version
 
 ```bash
 ./pmem knowledge retire --id old-product-page-seo
+```
+
+## Rationale Layer
+
+Используйте для вопросов "почему так", отклоненных подходов, причин ошибок, экспериментов и проектных инвариантов. Это не место для скрытых рассуждений агента: запись должна содержать проверяемое решение, альтернативы и evidence.
+
+Пример:
+
+```bash
+./pmem rationale add --type decision --title "Use SQLite as Source of Truth" --file docs/rationale/sqlite.md --why "local-first and upgrade-safe" --rejected "Postgres: unnecessary server dependency" --evidence "tests: upgrade preserves graph.sqlite"
+./pmem rationale context --task "replace local database"
+```
+
+Если причина изменилась:
+
+```bash
+./pmem rationale update --id use-sqlite-as-source-of-truth --file docs/rationale/sqlite.md
+```
+
+Устаревшее:
+
+```bash
+./pmem rationale retire --id old-storage-rationale
 ```
 
 ## Vector Backend

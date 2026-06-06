@@ -20,6 +20,15 @@ from tools.project_memory.services.knowledge import (
     write_knowledge_context,
 )
 from tools.project_memory.services.migrations import apply_migrations
+from tools.project_memory.services.rationale import (
+    add_rationale,
+    build_rationale_context,
+    retire_rationale,
+    search_rationale,
+    show_rationale,
+    update_rationale,
+    write_rationale_context,
+)
 from tools.project_memory.services.search import search as search_service
 from tools.project_memory.services.test_selector import select_tests
 from tools.project_memory.version import __version__
@@ -55,7 +64,7 @@ def command_context(args: argparse.Namespace) -> int:
     out = Path(args.out)
     if not out.is_absolute():
         out = root() / out
-    written = write_context(root(), args.task, args.base, out)
+    written = write_context(root(), args.task, args.base, out, reset_task=args.reset_task)
     print(written)
     return 0
 
@@ -77,7 +86,11 @@ def command_record_failure(args: argparse.Namespace) -> int:
 
 def command_search(args: argparse.Namespace) -> int:
     for item in search_service(root(), args.query, args.limit, layer=args.layer):
-        print(f"{item['path']} {item['fqn']}: {item['snippet']}")
+        print(
+            f"{item['path']} {item['fqn']} "
+            f"[{item.get('source', 'local')} {float(item.get('score') or 0.0):.2f}; {item.get('reason', 'matched')}]: "
+            f"{item['snippet']}"
+        )
     return 0
 
 
@@ -142,6 +155,77 @@ def command_knowledge(args: argparse.Namespace) -> int:
     return 2
 
 
+def command_rationale(args: argparse.Namespace) -> int:
+    try:
+        if args.rationale_command == "add":
+            result = add_rationale(
+                root(),
+                rationale_type=args.type,
+                title=args.title,
+                file_path=args.file,
+                entry_id=args.id,
+                decision=args.decision,
+                why=args.why,
+                rejected=args.rejected or [],
+                evidence=args.evidence or [],
+                tags=args.tags or [],
+                source=args.source,
+                summary=args.summary,
+                supersedes=args.supersedes,
+                links=args.link or [],
+            )
+            print(f"rationale added: {result.id} v{result.version} {result.path}")
+            return 0
+        if args.rationale_command == "update":
+            result = update_rationale(
+                root(),
+                entry_id=args.id,
+                file_path=args.file,
+                title=args.title,
+                rationale_type=args.type,
+                decision=args.decision,
+                why=args.why,
+                rejected=args.rejected,
+                evidence=args.evidence,
+                tags=args.tags,
+                source=args.source,
+                summary=args.summary,
+                links=args.link,
+            )
+            print(f"rationale updated: {result.id} v{result.version} {result.path}")
+            return 0
+        if args.rationale_command == "search":
+            for item in search_rationale(root(), args.query, args.limit, include_archived=args.include_archived):
+                print(
+                    f"[{item['type']}] {item['title']} v{item['version']} "
+                    f"{item['rationale_id']} {item['path']} "
+                    f"[{item.get('source', 'local')} {float(item.get('score') or 0.0):.2f}]: "
+                    f"{item['snippet']}"
+                )
+            return 0
+        if args.rationale_command == "context":
+            if args.out:
+                out = Path(args.out)
+                if not out.is_absolute():
+                    out = root() / out
+                print(write_rationale_context(root(), args.task, out, args.limit))
+            else:
+                print(build_rationale_context(root(), args.task, args.limit), end="")
+            return 0
+        if args.rationale_command == "show":
+            print(show_rationale(root(), args.id), end="")
+            return 0
+        if args.rationale_command == "retire":
+            result = retire_rationale(root(), args.id, status=args.status)
+            print(f"rationale {result.status}: {result.id} v{result.version} {result.path}")
+            return 0
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print("missing rationale command", file=sys.stderr)
+    return 2
+
+
 def command_migrate(_: argparse.Namespace) -> int:
     applied = apply_migrations(root())
     if applied:
@@ -194,6 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task", required=True)
     p.add_argument("--base", default="HEAD")
     p.add_argument("--out", default=".project-memory/reports/CHANGE_CONTEXT.md")
+    p.add_argument("--reset-task", action="store_true")
     p.set_defaults(func=command_context)
 
     p = sub.add_parser("tests")
@@ -208,7 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("search")
     p.add_argument("--query", required=True)
     p.add_argument("--limit", type=int, default=10)
-    p.add_argument("--layer", choices=["knowledge"], default=None)
+    p.add_argument("--layer", choices=["knowledge", "rationale"], default=None)
     p.set_defaults(func=command_search)
 
     p = sub.add_parser("knowledge")
@@ -257,6 +342,61 @@ def build_parser() -> argparse.ArgumentParser:
     k.add_argument("--id", required=True)
     k.add_argument("--status", choices=["superseded", "archived"], default="archived")
     k.set_defaults(func=command_knowledge)
+
+    p = sub.add_parser("rationale")
+    rationale_sub = p.add_subparsers(dest="rationale_command", required=True)
+
+    r = rationale_sub.add_parser("add")
+    r.add_argument("--type", default="decision")
+    r.add_argument("--title", required=True)
+    r.add_argument("--file", required=True)
+    r.add_argument("--id")
+    r.add_argument("--decision")
+    r.add_argument("--why")
+    r.add_argument("--rejected", action="append")
+    r.add_argument("--evidence", action="append")
+    r.add_argument("--tags", action="append")
+    r.add_argument("--source")
+    r.add_argument("--summary")
+    r.add_argument("--supersedes")
+    r.add_argument("--link", action="append")
+    r.set_defaults(func=command_rationale)
+
+    r = rationale_sub.add_parser("update")
+    r.add_argument("--id", required=True)
+    r.add_argument("--file", required=True)
+    r.add_argument("--title")
+    r.add_argument("--type")
+    r.add_argument("--decision")
+    r.add_argument("--why")
+    r.add_argument("--rejected", action="append")
+    r.add_argument("--evidence", action="append")
+    r.add_argument("--tags", action="append")
+    r.add_argument("--source")
+    r.add_argument("--summary")
+    r.add_argument("--link", action="append")
+    r.set_defaults(func=command_rationale)
+
+    r = rationale_sub.add_parser("search")
+    r.add_argument("--query", required=True)
+    r.add_argument("--limit", type=int, default=5)
+    r.add_argument("--include-archived", action="store_true")
+    r.set_defaults(func=command_rationale)
+
+    r = rationale_sub.add_parser("context")
+    r.add_argument("--task", required=True)
+    r.add_argument("--limit", type=int)
+    r.add_argument("--out")
+    r.set_defaults(func=command_rationale)
+
+    r = rationale_sub.add_parser("show")
+    r.add_argument("--id", required=True)
+    r.set_defaults(func=command_rationale)
+
+    r = rationale_sub.add_parser("retire")
+    r.add_argument("--id", required=True)
+    r.add_argument("--status", choices=["superseded", "archived"], default="archived")
+    r.set_defaults(func=command_rationale)
 
     p = sub.add_parser("migrate")
     p.set_defaults(func=command_migrate)

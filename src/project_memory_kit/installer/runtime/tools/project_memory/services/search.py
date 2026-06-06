@@ -9,14 +9,46 @@ from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
 
+def _terms(query: str) -> list[str]:
+    return [term.lower() for term in re.findall(r"[A-Za-zА-Яа-я0-9_]{2,}", query)]
+
+
 def _fts_query(query: str) -> str:
-    terms = re.findall(r"[A-Za-zА-Яа-я0-9_]{2,}", query)
+    terms = _terms(query)
     return " ".join(terms[:12]) if terms else query.strip()
 
 
 def _fts_query_any(query: str) -> str:
-    terms = re.findall(r"[A-Za-zА-Яа-я0-9_]{2,}", query)
+    terms = _terms(query)
     return " OR ".join(terms[:12]) if terms else query.strip()
+
+
+def _local_score(query: str, row: dict[str, object], source: str = "fts") -> tuple[float, str]:
+    terms = _terms(query)
+    haystack = " ".join(
+        str(row.get(key) or "").lower()
+        for key in ["path", "fqn", "snippet"]
+    )
+    matches = [term for term in terms if term in haystack]
+    if not terms:
+        return (0.1, source)
+    coverage = len(set(matches)) / max(len(set(terms)), 1)
+    path_bonus = 0.15 if any(term in str(row.get("path") or "").lower() for term in terms) else 0.0
+    source_bonus = 0.25 if source == "vector" else 0.1
+    score = min(1.0, source_bonus + coverage * 0.75 + path_bonus)
+    reason = f"{source}; matched {len(set(matches))}/{len(set(terms))} query terms"
+    return score, reason
+
+
+def _annotate_rows(query: str, rows: list[dict[str, object]], source: str) -> list[dict[str, object]]:
+    annotated: list[dict[str, object]] = []
+    for row in rows:
+        score, reason = _local_score(query, row, source=source)
+        row["score"] = float(row.get("score") or score)
+        row["source"] = source
+        row["reason"] = reason
+        annotated.append(row)
+    return annotated
 
 
 def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | None = None) -> list[dict[str, object]]:
@@ -27,7 +59,8 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
     try:
         rows = store.query(
             f"""
-            SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn, snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet
+            SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
+                   snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet
             FROM chunks_fts
             {layer_join}
             WHERE chunks_fts MATCH ?
@@ -42,7 +75,8 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
                 args = (any_query, layer, limit) if layer else (any_query, limit)
                 rows = store.query(
                     f"""
-                    SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn, snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet
+                    SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
+                           snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet
                     FROM chunks_fts
                     {layer_join}
                     WHERE chunks_fts MATCH ?
@@ -55,7 +89,8 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
         args = (f"%{query[:80]}%", layer, limit) if layer else (f"%{query[:80]}%", limit)
         rows = store.query(
             f"""
-            SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn, substr(content, 1, 240) AS snippet
+            SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
+                   substr(content, 1, 240) AS snippet
             FROM chunks_fts
             {layer_join}
             WHERE content LIKE ?
@@ -64,7 +99,7 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
             """,
             args,
         )
-    return [dict(row) for row in rows]
+    return _annotate_rows(query, [dict(row) for row in rows], "fts")
 
 
 def _rows_by_chunk_id(store: SQLiteGraphStore, chunk_ids: list[str], layer: str | None = None) -> dict[str, dict[str, object]]:
@@ -76,7 +111,8 @@ def _rows_by_chunk_id(store: SQLiteGraphStore, chunk_ids: list[str], layer: str 
     args: tuple[object, ...] = tuple(chunk_ids) + ((layer,) if layer else ())
     rows = store.query(
         f"""
-        SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn, substr(content, 1, 240) AS snippet
+        SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
+               substr(content, 1, 240) AS snippet
         FROM chunks_fts
         {layer_join}
         WHERE chunk_id IN ({placeholders})
@@ -112,8 +148,11 @@ def _vector_search(
     for hit in hits:
         row = rows_by_id.get(str(hit["chunk_id"]))
         if row:
-            row["score"] = hit["score"]
+            vector_score = float(hit["score"])
+            local_score, reason = _local_score(query, row, source="local")
+            row["score"] = max(vector_score, local_score)
             row["source"] = "vector"
+            row["reason"] = f"vector score plus {reason}"
             rows.append(row)
     return rows
 
@@ -134,6 +173,7 @@ def search(root: Path, query: str, limit: int = 10, layer: str | None = None) ->
         if str(row["chunk_id"]) not in seen:
             results.append(row)
             seen.add(str(row["chunk_id"]))
-        if len(results) >= limit:
+        if len(results) >= limit * 2:
             break
+    results.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
     return results[:limit]

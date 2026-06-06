@@ -21,7 +21,7 @@ VALID_STATUSES = {CURRENT, SUPERSEDED, ARCHIVED}
 
 
 @dataclass(frozen=True)
-class KnowledgeResult:
+class RationaleResult:
     id: str
     type: str
     title: str
@@ -36,33 +36,33 @@ def _store(root: Path) -> SQLiteGraphStore:
     return store
 
 
-def _knowledge_dir(root: Path) -> Path:
-    return config_path(root, "knowledge_dir")
+def _rationale_dir(root: Path) -> Path:
+    return config_path(root, "rationale_dir")
 
 
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip().lower()).strip("-")
-    return slug or stable_id("knowledge", value)
+    return slug or stable_id("rationale", value)
 
 
 def _normalize_type(value: str) -> str:
-    return _slugify(value or "note")
+    return _slugify(value or "decision")
 
 
 def _normalize_status(value: str) -> str:
     status = (value or CURRENT).strip().lower()
     if status not in VALID_STATUSES:
-        raise ValueError(f"invalid knowledge status: {value}")
+        raise ValueError(f"invalid rationale status: {value}")
     return status
 
 
-def _tags(values: Iterable[str] | None) -> list[str]:
+def _list(values: Iterable[str] | None) -> list[str]:
     result: list[str] = []
     for value in values or []:
         for item in str(value).split(","):
-            tag = item.strip()
-            if tag and tag not in result:
-                result.append(tag)
+            item = item.strip()
+            if item and item not in result:
+                result.append(item)
     return result
 
 
@@ -84,13 +84,29 @@ def _relative(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _entry_path(root: Path, item_type: str, entry_id: str) -> Path:
-    return _knowledge_dir(root) / item_type / f"{entry_id}.md"
+def _entry_path(root: Path, rationale_type: str, entry_id: str) -> Path:
+    return _rationale_dir(root) / rationale_type / f"{entry_id}.md"
 
 
-def _summary_for(content: str, explicit: str | None = None) -> str:
+def _strip_frontmatter(content: str) -> str:
+    if not content.startswith("---\n"):
+        return content
+    marker = content.find("\n---", 4)
+    if marker == -1:
+        return content
+    end = content.find("\n", marker + 4)
+    if end == -1:
+        return ""
+    return content[end + 1 :]
+
+
+def _summary_for(content: str, explicit: str | None = None, decision: str | None = None, why: str | None = None) -> str:
     if explicit:
         return explicit.strip()
+    if decision:
+        return decision.strip()[:320]
+    if why:
+        return why.strip()[:320]
     for line in _strip_frontmatter(content).splitlines():
         clean = line.strip().lstrip("#").strip()
         if clean:
@@ -100,7 +116,7 @@ def _summary_for(content: str, explicit: str | None = None) -> str:
 
 def _frontmatter(
     entry_id: str,
-    item_type: str,
+    rationale_type: str,
     title: str,
     status: str,
     version: int,
@@ -111,7 +127,7 @@ def _frontmatter(
     lines = [
         "---",
         f"pmem_id: {entry_id}",
-        f"type: {item_type}",
+        f"type: {rationale_type}",
         f"title: {title}",
         f"status: {status}",
         f"version: {version}",
@@ -129,7 +145,7 @@ def _frontmatter(
 
 def _render_markdown(
     entry_id: str,
-    item_type: str,
+    rationale_type: str,
     title: str,
     status: str,
     version: int,
@@ -137,25 +153,33 @@ def _render_markdown(
     tags: list[str],
     supersedes: str | None,
     content: str,
+    decision: str | None,
+    why: str | None,
+    rejected: list[str],
+    evidence: list[str],
 ) -> str:
-    body = _strip_frontmatter(content).strip() + "\n"
-    return _frontmatter(entry_id, item_type, title, status, version, source, tags, supersedes) + body
-
-
-def _strip_frontmatter(content: str) -> str:
-    if not content.startswith("---\n"):
-        return content
-    marker = content.find("\n---", 4)
-    if marker == -1:
-        return content
-    end = content.find("\n", marker + 4)
-    if end == -1:
-        return ""
-    return content[end + 1 :]
+    body = _strip_frontmatter(content).strip()
+    sections: list[str] = []
+    if decision:
+        sections.extend(["## Decision", "", decision.strip(), ""])
+    if why:
+        sections.extend(["## Why", "", why.strip(), ""])
+    if rejected:
+        sections.extend(["## Rejected", ""])
+        sections.extend(f"- {item}" for item in rejected)
+        sections.append("")
+    if evidence:
+        sections.extend(["## Evidence", ""])
+        sections.extend(f"- {item}" for item in evidence)
+        sections.append("")
+    if body:
+        sections.append(body)
+    rendered_body = "\n".join(sections).strip() + "\n"
+    return _frontmatter(entry_id, rationale_type, title, status, version, source, tags, supersedes) + rendered_body
 
 
 def _entry_row(store: SQLiteGraphStore, entry_id: str) -> sqlite3.Row | None:
-    rows = store.query("SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,))
+    rows = store.query("SELECT * FROM rationale_entries WHERE id = ?", (entry_id,))
     return rows[0] if rows else None
 
 
@@ -164,7 +188,7 @@ def _clear_entry_chunks(store: SQLiteGraphStore, path: str) -> None:
         chunk_ids = [
             row["id"]
             for row in conn.execute(
-                "SELECT id FROM nodes WHERE kind = 'KnowledgeChunk' AND path = ?",
+                "SELECT id FROM nodes WHERE kind = 'RationaleChunk' AND path = ?",
                 (path,),
             ).fetchall()
         ]
@@ -213,7 +237,7 @@ def _index_entry(
     root: Path,
     store: SQLiteGraphStore,
     entry_id: str,
-    item_type: str,
+    rationale_type: str,
     title: str,
     status: str,
     version: int,
@@ -221,20 +245,28 @@ def _index_entry(
     summary: str,
     content: str,
     tags: list[str],
+    decision: str | None,
+    why: str | None,
+    rejected: list[str],
+    evidence: list[str],
 ) -> None:
     _clear_entry_chunks(store, path)
-    knowledge_id = store.upsert_node(
-        kind="Knowledge",
+    rationale_id = store.upsert_node(
+        kind="Rationale",
         name=title,
         fqn=entry_id,
         path=path,
         language="markdown",
-        layer="knowledge",
+        layer="rationale",
         properties={
-            "type": item_type,
+            "type": rationale_type,
             "status": status,
             "version": version,
             "summary": summary,
+            "decision": decision,
+            "why": why,
+            "rejected": rejected,
+            "evidence": evidence,
             "tags": tags,
         },
     )
@@ -244,29 +276,29 @@ def _index_entry(
     vectors = _vectors(root)
     for index, chunk in enumerate(_chunks(content), start=1):
         chunk_id = store.upsert_node(
-            id=stable_id("knowledge-chunk", entry_id, index),
-            kind="KnowledgeChunk",
+            id=stable_id("rationale-chunk", entry_id, index),
+            kind="RationaleChunk",
             name=f"{title} chunk {index}",
-            fqn=f"knowledge:{entry_id}#chunk-{index}",
+            fqn=f"rationale:{entry_id}#chunk-{index}",
             path=path,
             language="markdown",
-            layer="knowledge",
+            layer="rationale",
             properties={
                 "content": chunk[:2000],
-                "knowledge_id": entry_id,
-                "type": item_type,
+                "rationale_id": entry_id,
+                "type": rationale_type,
                 "status": status,
                 "version": version,
                 "summary": summary,
                 "tags": tags,
             },
         )
-        store.upsert_edge(knowledge_id, chunk_id, "CONTAINS", source="knowledge", confidence=1.0)
+        store.upsert_edge(rationale_id, chunk_id, "CONTAINS", source="rationale", confidence=1.0)
         with store.connect() as conn:
             conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
             conn.execute(
                 "INSERT INTO chunks_fts(chunk_id, path, fqn, content) VALUES (?, ?, ?, ?)",
-                (chunk_id, path, f"knowledge:{entry_id}", f"{title}\n{summary}\n{chunk}"),
+                (chunk_id, path, f"rationale:{entry_id}", f"{title}\n{summary}\n{chunk}"),
             )
         vectors.upsert_chunk(
             chunk_id,
@@ -275,12 +307,12 @@ def _index_entry(
                 "chunk_id": chunk_id,
                 "node_id": chunk_id,
                 "file_path": path,
-                "knowledge_id": entry_id,
-                "knowledge_type": item_type,
+                "rationale_id": entry_id,
+                "rationale_type": rationale_type,
                 "title": title,
                 "status": status,
                 "version": version,
-                "kind": "knowledge",
+                "kind": "rationale",
                 "hash": sha256_text(content),
             },
         )
@@ -289,7 +321,7 @@ def _index_entry(
 def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str]) -> None:
     now = utc_now()
     with store.connect() as conn:
-        conn.execute("DELETE FROM knowledge_links WHERE knowledge_id = ?", (entry_id,))
+        conn.execute("DELETE FROM rationale_links WHERE rationale_id = ?", (entry_id,))
         for raw in links:
             value = str(raw).strip()
             if not value:
@@ -297,10 +329,10 @@ def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str]) ->
             relation, _, target = value.partition(":")
             if not target:
                 relation, target = "relates_to", relation
-            link_id = stable_id("knowledge-link", entry_id, relation, target)
+            link_id = stable_id("rationale-link", entry_id, relation, target)
             conn.execute(
                 """
-                INSERT INTO knowledge_links(id, knowledge_id, relation, target, properties_json, created_at)
+                INSERT INTO rationale_links(id, rationale_id, relation, target, properties_json, created_at)
                 VALUES (?, ?, ?, ?, '{}', ?)
                 ON CONFLICT(id) DO UPDATE SET relation=excluded.relation, target=excluded.target
                 """,
@@ -308,52 +340,77 @@ def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str]) ->
             )
 
 
-def add_knowledge(
+def add_rationale(
     root: Path,
-    item_type: str,
+    rationale_type: str,
     title: str,
     file_path: str | Path,
     entry_id: str | None = None,
+    decision: str | None = None,
+    why: str | None = None,
+    rejected: Iterable[str] | None = None,
+    evidence: Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
     source: str | None = None,
     summary: str | None = None,
     supersedes: str | None = None,
     links: Iterable[str] | None = None,
-) -> KnowledgeResult:
+) -> RationaleResult:
     store = _store(root)
-    item_type = _normalize_type(item_type)
+    rationale_type = _normalize_type(rationale_type)
     entry_id = _slugify(entry_id or title)
     if _entry_row(store, entry_id):
-        raise ValueError(f"knowledge entry already exists: {entry_id}")
+        raise ValueError(f"rationale entry already exists: {entry_id}")
     if supersedes and not _entry_row(store, _slugify(supersedes)):
-        raise ValueError(f"superseded knowledge entry not found: {supersedes}")
+        raise ValueError(f"superseded rationale entry not found: {supersedes}")
 
     content = _read_source(root, file_path)
-    tag_list = _tags(tags)
+    tag_list = _list(tags)
+    rejected_list = _list(rejected)
+    evidence_list = _list(evidence)
     status = CURRENT
     version = 1
-    summary_value = _summary_for(content, summary)
-    path = _entry_path(root, item_type, entry_id)
+    summary_value = _summary_for(content, summary, decision, why)
+    path = _entry_path(root, rationale_type, entry_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    rendered = _render_markdown(entry_id, item_type, title, status, version, source, tag_list, supersedes, content)
+    rendered = _render_markdown(
+        entry_id,
+        rationale_type,
+        title,
+        status,
+        version,
+        source,
+        tag_list,
+        supersedes,
+        content,
+        decision,
+        why,
+        rejected_list,
+        evidence_list,
+    )
     path.write_text(rendered, encoding="utf-8")
     rel = _relative(root, path)
     now = utc_now()
     with store.connect() as conn:
         conn.execute(
             """
-            INSERT INTO knowledge_entries(
-              id, type, title, status, version, source, tags_json, path, summary,
-              content_hash, supersedes, created_at, updated_at, properties_json
+            INSERT INTO rationale_entries(
+              id, type, title, status, version, decision, why, rejected_json, evidence_json,
+              source, tags_json, path, summary, content_hash, supersedes, created_at,
+              updated_at, properties_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}')
             """,
             (
                 entry_id,
-                item_type,
+                rationale_type,
                 title,
                 status,
                 version,
+                decision,
+                why,
+                json.dumps(rejected_list),
+                json.dumps(evidence_list),
                 source,
                 json.dumps(tag_list),
                 rel,
@@ -366,36 +423,60 @@ def add_knowledge(
         )
     _save_links(store, entry_id, links or [])
     if supersedes:
-        retire_knowledge(root, supersedes, status=SUPERSEDED)
-    _index_entry(root, store, entry_id, item_type, title, status, version, rel, summary_value, rendered, tag_list)
-    return KnowledgeResult(entry_id, item_type, title, status, version, rel)
+        retire_rationale(root, supersedes, status=SUPERSEDED)
+    _index_entry(
+        root,
+        store,
+        entry_id,
+        rationale_type,
+        title,
+        status,
+        version,
+        rel,
+        summary_value,
+        rendered,
+        tag_list,
+        decision,
+        why,
+        rejected_list,
+        evidence_list,
+    )
+    return RationaleResult(entry_id, rationale_type, title, status, version, rel)
 
 
-def update_knowledge(
+def update_rationale(
     root: Path,
     entry_id: str,
     file_path: str | Path,
     title: str | None = None,
-    item_type: str | None = None,
+    rationale_type: str | None = None,
+    decision: str | None = None,
+    why: str | None = None,
+    rejected: Iterable[str] | None = None,
+    evidence: Iterable[str] | None = None,
     tags: Iterable[str] | None = None,
     source: str | None = None,
     summary: str | None = None,
     links: Iterable[str] | None = None,
-) -> KnowledgeResult:
+) -> RationaleResult:
     store = _store(root)
     entry_id = _slugify(entry_id)
     row = _entry_row(store, entry_id)
     if not row:
-        raise ValueError(f"knowledge entry not found: {entry_id}")
+        raise ValueError(f"rationale entry not found: {entry_id}")
 
     content = _read_source(root, file_path)
-    next_type = _normalize_type(item_type or row["type"])
+    next_type = _normalize_type(rationale_type or row["type"])
     next_title = title or row["title"]
-    next_tags = _tags(tags if tags is not None else json.loads(row["tags_json"] or "[]"))
+    next_decision = decision if decision is not None else row["decision"]
+    next_why = why if why is not None else row["why"]
+    next_rejected = _list(rejected if rejected is not None else json.loads(row["rejected_json"] or "[]"))
+    next_evidence = _list(evidence if evidence is not None else json.loads(row["evidence_json"] or "[]"))
+    next_tags = _list(tags if tags is not None else json.loads(row["tags_json"] or "[]"))
     next_source = source if source is not None else row["source"]
     version = int(row["version"]) + 1
     status = CURRENT
-    summary_value = _summary_for(content, summary)
+    summary_value = _summary_for(content, summary, next_decision, next_why)
     old_path = row["path"]
     path = _entry_path(root, next_type, entry_id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,6 +490,10 @@ def update_knowledge(
         next_tags,
         row["supersedes"],
         content,
+        next_decision,
+        next_why,
+        next_rejected,
+        next_evidence,
     )
     path.write_text(rendered, encoding="utf-8")
     rel = _relative(root, path)
@@ -421,8 +506,9 @@ def update_knowledge(
     with store.connect() as conn:
         conn.execute(
             """
-            UPDATE knowledge_entries
-            SET type = ?, title = ?, status = ?, version = ?, source = ?, tags_json = ?,
+            UPDATE rationale_entries
+            SET type = ?, title = ?, status = ?, version = ?, decision = ?, why = ?,
+                rejected_json = ?, evidence_json = ?, source = ?, tags_json = ?,
                 path = ?, summary = ?, content_hash = ?, updated_at = ?
             WHERE id = ?
             """,
@@ -431,6 +517,10 @@ def update_knowledge(
                 next_title,
                 status,
                 version,
+                next_decision,
+                next_why,
+                json.dumps(next_rejected),
+                json.dumps(next_evidence),
                 next_source,
                 json.dumps(next_tags),
                 rel,
@@ -442,59 +532,78 @@ def update_knowledge(
         )
     if links is not None:
         _save_links(store, entry_id, links)
-    _index_entry(root, store, entry_id, next_type, next_title, status, version, rel, summary_value, rendered, next_tags)
-    return KnowledgeResult(entry_id, next_type, next_title, status, version, rel)
+    _index_entry(
+        root,
+        store,
+        entry_id,
+        next_type,
+        next_title,
+        status,
+        version,
+        rel,
+        summary_value,
+        rendered,
+        next_tags,
+        next_decision,
+        next_why,
+        next_rejected,
+        next_evidence,
+    )
+    return RationaleResult(entry_id, next_type, next_title, status, version, rel)
 
 
-def retire_knowledge(root: Path, entry_id: str, status: str = ARCHIVED) -> KnowledgeResult:
+def retire_rationale(root: Path, entry_id: str, status: str = ARCHIVED) -> RationaleResult:
     store = _store(root)
     entry_id = _slugify(entry_id)
     status = _normalize_status(status)
     row = _entry_row(store, entry_id)
     if not row:
-        raise ValueError(f"knowledge entry not found: {entry_id}")
+        raise ValueError(f"rationale entry not found: {entry_id}")
     now = utc_now()
     with store.connect() as conn:
         conn.execute(
-            "UPDATE knowledge_entries SET status = ?, updated_at = ? WHERE id = ?",
+            "UPDATE rationale_entries SET status = ?, updated_at = ? WHERE id = ?",
             (status, now, entry_id),
         )
     _clear_entry_chunks(store, row["path"])
     store.upsert_node(
-        kind="Knowledge",
+        kind="Rationale",
         name=row["title"],
         fqn=entry_id,
         path=row["path"],
         language="markdown",
-        layer="knowledge",
+        layer="rationale",
         properties={
             "type": row["type"],
             "status": status,
             "version": int(row["version"]),
             "summary": row["summary"],
+            "decision": row["decision"],
+            "why": row["why"],
+            "rejected": json.loads(row["rejected_json"] or "[]"),
+            "evidence": json.loads(row["evidence_json"] or "[]"),
             "tags": json.loads(row["tags_json"] or "[]"),
         },
     )
-    return KnowledgeResult(entry_id, row["type"], row["title"], status, int(row["version"]), row["path"])
+    return RationaleResult(entry_id, row["type"], row["title"], status, int(row["version"]), row["path"])
 
 
-def show_knowledge(root: Path, entry_id: str) -> str:
+def show_rationale(root: Path, entry_id: str) -> str:
     store = _store(root)
     entry_id = _slugify(entry_id)
     row = _entry_row(store, entry_id)
     if not row:
-        raise ValueError(f"knowledge entry not found: {entry_id}")
-    path = root / row["path"]
-    return path.read_text(encoding="utf-8")
+        raise ValueError(f"rationale entry not found: {entry_id}")
+    return (root / row["path"]).read_text(encoding="utf-8")
 
 
-def search_knowledge(root: Path, query: str, limit: int = 5, include_archived: bool = False) -> list[dict[str, object]]:
+def search_rationale(root: Path, query: str, limit: int = 5, include_archived: bool = False) -> list[dict[str, object]]:
     store = _store(root)
-    rows = global_search(root, query, max(limit * 4, limit), layer="knowledge")
+    rows = global_search(root, query, max(limit * 4, limit), layer="rationale")
     entry_paths = {
         str(row["path"]): row
         for row in store.query(
-            "SELECT * FROM knowledge_entries WHERE status = 'current' OR ?",
+            "SELECT * FROM rationale_entries WHERE status = 'current' OR ?",
             (1 if include_archived else 0,),
         )
     }
@@ -511,12 +620,16 @@ def search_knowledge(root: Path, query: str, limit: int = 5, include_archived: b
         result = dict(item)
         result.update(
             {
-                "knowledge_id": entry["id"],
+                "rationale_id": entry["id"],
                 "type": entry["type"],
                 "title": entry["title"],
                 "status": entry["status"],
                 "version": entry["version"],
                 "summary": entry["summary"],
+                "decision": entry["decision"],
+                "why": entry["why"],
+                "rejected": json.loads(entry["rejected_json"] or "[]"),
+                "evidence": json.loads(entry["evidence_json"] or "[]"),
                 "tags": json.loads(entry["tags_json"] or "[]"),
             }
         )
@@ -526,52 +639,54 @@ def search_knowledge(root: Path, query: str, limit: int = 5, include_archived: b
     return results
 
 
-def build_knowledge_context(root: Path, task: str, limit: int | None = None) -> str:
+def build_rationale_context(root: Path, task: str, limit: int | None = None) -> str:
     cfg = load_config(root)
-    limit = limit or int(cfg.get("knowledge", {}).get("max_context_items", 5))
-    rows = search_knowledge(root, task, limit=limit)
-    lines = ["# Knowledge Context", "", "## Task", task or "(not provided)", "", "## Current Knowledge"]
+    limit = limit or int(cfg.get("rationale", {}).get("max_context_items", 5))
+    rows = search_rationale(root, task, limit=limit)
+    lines = ["# Rationale Context", "", "## Task", task or "(not provided)", "", "## Current Rationale"]
     if rows:
         for row in rows:
+            why = f" why: {row['why']}" if row.get("why") else ""
             lines.append(
                 f"- [{row['type']}] {row['title']} v{row['version']} "
-                f"`{row['knowledge_id']}`: {row['snippet']} (full: `{row['path']}`)"
+                f"`{row['rationale_id']}`:{why} {row['snippet']} (full: `{row['path']}`)"
             )
     else:
-        lines.append("- No current knowledge entries found.")
+        lines.append("- No current rationale entries found.")
     lines.extend(
         [
             "",
             "## Rules",
-            "- Use only `current` knowledge by default.",
-            "- Open the full Markdown file before relying on a principle or research note.",
-            "- If a principle changed, update the knowledge entry instead of creating a competing current copy.",
+            "- Rationale stores verified decisions, rejected alternatives, and evidence; it must not store hidden chain-of-thought.",
+            "- Use only `current` rationale by default.",
+            "- Open the full Markdown file before relying on a decision or rejected path.",
+            "- If the cause changed, update the rationale entry instead of creating a competing current copy.",
         ]
     )
     return "\n".join(lines) + "\n"
 
 
-def write_knowledge_context(root: Path, task: str, out: Path, limit: int | None = None) -> str:
-    content = build_knowledge_context(root, task, limit)
+def write_rationale_context(root: Path, task: str, out: Path, limit: int | None = None) -> str:
+    content = build_rationale_context(root, task, limit)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     return str(out)
 
 
-def current_knowledge_count(root: Path) -> int:
+def current_rationale_count(root: Path) -> int:
     store = _store(root)
-    rows = store.query("SELECT count(*) AS count FROM knowledge_entries WHERE status = 'current'")
+    rows = store.query("SELECT count(*) AS count FROM rationale_entries WHERE status = 'current'")
     return int(rows[0]["count"] if rows else 0)
 
 
-def knowledge_conflict_count(root: Path) -> int:
+def rationale_conflict_count(root: Path) -> int:
     store = _store(root)
     rows = store.query(
         """
         SELECT count(*) AS count
         FROM (
           SELECT lower(type) AS type_key, lower(title) AS title_key
-          FROM knowledge_entries
+          FROM rationale_entries
           WHERE status = 'current'
           GROUP BY type_key, title_key
           HAVING count(*) > 1

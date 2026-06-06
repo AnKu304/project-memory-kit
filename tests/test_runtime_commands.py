@@ -215,6 +215,169 @@ class RuntimeCommandsTest(unittest.TestCase):
                 conn.close()
             self.assertEqual(row, ("archived", 2))
 
+    def test_rationale_lifecycle_and_reset_task_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            notes = root / "notes"
+            notes.mkdir()
+            source = notes / "storage.md"
+            source.write_text(
+                "# Storage Decision\n\nUse legacy-db-token as the source of truth.\n",
+                encoding="utf-8",
+            )
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+
+            add = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "rationale",
+                    "add",
+                    "--type",
+                    "decision",
+                    "--title",
+                    "Storage Decision",
+                    "--file",
+                    "notes/storage.md",
+                    "--why",
+                    "local-first storage",
+                    "--rejected",
+                    "Remote database: unnecessary for local project memory",
+                    "--evidence",
+                    "doctor: sqlite ok",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(add.returncode, 0, add.stderr)
+            self.assertIn("storage-decision", add.stdout)
+            self.assertTrue((root / ".project-memory/rationale/decision/storage-decision.md").exists())
+
+            search = subprocess.run(
+                [str(root / "pmem"), "rationale", "search", "--query", "why remote database"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertIn("Storage Decision", search.stdout)
+            self.assertIn("0.", search.stdout)
+
+            source.write_text(
+                "# Storage Decision\n\nUse canonical-db-token as the source of truth.\n",
+                encoding="utf-8",
+            )
+            update = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "rationale",
+                    "update",
+                    "--id",
+                    "storage-decision",
+                    "--file",
+                    "notes/storage.md",
+                    "--why",
+                    "SQLite is local-first and upgrade-safe",
+                    "--evidence",
+                    "tests: upgrade preserves graph.sqlite",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(update.returncode, 0, update.stderr)
+            self.assertIn("v2", update.stdout)
+
+            old_search = subprocess.run(
+                [str(root / "pmem"), "rationale", "search", "--query", "legacy-db-token"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(old_search.returncode, 0, old_search.stderr)
+            self.assertNotIn("legacy-db-token", old_search.stdout)
+
+            layer_search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "canonical db storage", "--layer", "rationale"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(layer_search.returncode, 0, layer_search.stderr)
+            self.assertIn("rationale:storage-decision", layer_search.stdout)
+            self.assertIn("matched", layer_search.stdout)
+
+            context = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "context",
+                    "--task",
+                    "change memory storage",
+                    "--reset-task",
+                    "--out",
+                    ".project-memory/reports/CHANGE_CONTEXT.md",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(context.returncode, 0, context.stderr)
+            report = (root / ".project-memory/reports/CHANGE_CONTEXT.md").read_text(encoding="utf-8")
+            self.assertIn("## Task Boundary", report)
+            self.assertIn("## Retrieved Rationale", report)
+            self.assertIn("storage-decision", report)
+
+            show = subprocess.run(
+                [str(root / "pmem"), "rationale", "show", "--id", "storage-decision"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(show.returncode, 0, show.stderr)
+            self.assertIn("version: 2", show.stdout)
+            self.assertNotIn("version: 1", show.stdout)
+
+            retire = subprocess.run(
+                [str(root / "pmem"), "rationale", "retire", "--id", "storage-decision"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(retire.returncode, 0, retire.stderr)
+            self.assertIn("archived", retire.stdout)
+
+            retired_search = subprocess.run(
+                [str(root / "pmem"), "rationale", "search", "--query", "canonical-db-token"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(retired_search.returncode, 0, retired_search.stderr)
+            self.assertEqual(retired_search.stdout.strip(), "")
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute(
+                    "SELECT status, version FROM rationale_entries WHERE id = 'storage-decision'"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(row, ("archived", 2))
+
     def test_indexes_js_ts_import_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

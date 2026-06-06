@@ -1,6 +1,6 @@
 ---
 name: dependency-graph-rag
-description: Use for the mandatory local project-memory workflow before and after meaningful code or knowledge work: dependency impact analysis, knowledge context, coding, bug fixing, refactoring, tests, research, architecture, SEO, design, UX, product principles, and failure investigation.
+description: Use for the mandatory local project-memory workflow before and after meaningful code, knowledge, or rationale work: dependency impact analysis, knowledge context, rationale context, coding, bug fixing, refactoring, tests, research, architecture, SEO, design, UX, product principles, and failure investigation.
 ---
 
 # Dependency Graph RAG
@@ -25,6 +25,7 @@ Use this skill for:
 - build or dependency changes
 - code review
 - architecture analysis
+- causality, "why", rejected approaches, experiments, or invariants
 - research or resource analysis
 - SEO, UX, design, product, or content principles
 - failure investigation
@@ -39,7 +40,7 @@ Run:
 ./pmem doctor
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
-./pmem context --task "<user task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+./pmem context --task "<user task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
 Read:
@@ -56,6 +57,14 @@ For research, product, UX, design, SEO, architecture, content, positioning, or p
 
 Read the retrieved full Markdown files before relying on a rule or research note.
 
+For tasks involving "why", rejected approaches, architecture choices, storage choices, tool choices, prior failures, or repeated dead ends, also run:
+
+```bash
+./pmem rationale context --task "<user task>" --out .project-memory/reports/RATIONALE_CONTEXT.md
+```
+
+Read the retrieved full Markdown files before relying on a decision or rejected path. Rationale stores verified decisions, alternatives, and evidence; it must not store hidden chain-of-thought.
+
 Keep context bounded. Use `pmem` reports, targeted search, local tests, and concise summaries first. Do not paste large files or logs into the chat unless local reports are insufficient or the failure is ambiguous.
 
 Extract:
@@ -68,6 +77,7 @@ Extract:
 - related previous failures
 - architecture constraints
 - current project knowledge
+- current project rationale
 - low-confidence graph areas
 
 ## Editing Rules
@@ -82,6 +92,8 @@ Extract:
 - Never store secrets in memory.
 - Use only `current` knowledge by default.
 - Update changed principles with `./pmem knowledge update`; do not create duplicate current rules.
+- Use only `current` rationale by default.
+- Update changed causes with `./pmem rationale update`; do not create duplicate current explanations.
 - Prefer local verification and small summaries over sending raw large outputs to the model.
 
 ## After Editing
@@ -103,6 +115,13 @@ If durable research, architecture, SEO, design, UX, product, or content context 
 ```bash
 ./pmem knowledge add --type "<type>" --title "<title>" --file "<markdown file>"
 ./pmem knowledge update --id "<knowledge id>" --file "<markdown file>"
+```
+
+If a durable decision, rejected approach, experiment result, invariant, or cause changed:
+
+```bash
+./pmem rationale add --type "<type>" --title "<title>" --file "<markdown file>"
+./pmem rationale update --id "<rationale id>" --file "<markdown file>"
 ```
 
 If a test fails:
@@ -129,5 +148,6 @@ Report:
 - dependencies checked
 - tests run
 - knowledge records read or updated
+- rationale records read or updated
 - failure memory updates
 - remaining risk
