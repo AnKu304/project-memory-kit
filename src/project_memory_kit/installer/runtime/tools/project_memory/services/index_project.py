@@ -28,7 +28,14 @@ def index_project(root: Path, mode: str = "changed") -> str:
     cfg = load_config(root)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
-    vectors = QdrantLocalStore(config_path(root, "qdrant_path"), cfg.get("memory", {}).get("vector_size", 64))
+    vector_cfg = cfg.get("vector", {})
+    vectors = QdrantLocalStore(
+        config_path(root, "qdrant_path"),
+        cfg.get("memory", {}).get("vector_size", 64),
+        backend=vector_cfg.get("backend", "auto"),
+        collection=vector_cfg.get("collection", "project_memory_chunks"),
+        model_name=vector_cfg.get("embedding_model"),
+    )
     parser = PythonAstParser()
 
     files = [path for path in _iter_files(root, mode) if should_index(root, path)]
@@ -148,4 +155,3 @@ def index_project(root: Path, mode: str = "changed") -> str:
         summary.append("warnings:")
         summary.extend(f"- {warning}" for warning in warnings[:20])
     return "\n".join(summary)
-

@@ -32,8 +32,8 @@
 ## Финальный Стек
 
 - Graph memory: SQLite property graph.
-- Vector boundary: Qdrant local mode path with deterministic offline vector fallback.
-- Embeddings: FastEmbed-compatible architecture, deterministic fallback for tests/offline bootstrap.
+- Vector memory: Qdrant local + FastEmbed в auto/strict режиме, deterministic fallback для offline bootstrap.
+- Search: SQLite FTS всегда доступен; Qdrant semantic hits добавляются к `pmem search`, когда vector backend доступен.
 - Parser: Python `ast` + `symtable`.
 - CLI: `pmem`.
 - Agent protocol: `AGENTS.md` managed block.
@@ -245,7 +245,44 @@ Installed project runtime:
 - для Python извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings/line ranges;
 - сохраняет nodes/edges/chunks в SQLite;
 - пишет FTS chunks;
-- пишет local vector records в `.project-memory/qdrant/`.
+- пишет vector records в `.project-memory/qdrant/`: Qdrant local при доступных зависимостях, иначе deterministic fallback records.
+
+## Vector Backend
+
+В `.project-memory/config.yaml` есть секция:
+
+```yaml
+vector:
+  backend: auto
+  collection: project_memory_chunks
+  embedding_model: null
+```
+
+Режимы:
+
+- `auto`: пробует Qdrant local + FastEmbed; если в Python-окружении `./pmem` нет зависимостей или модель недоступна, использует deterministic fallback.
+- `qdrant`: строгий режим; если Qdrant/FastEmbed недоступны, `./pmem index` и `./pmem search` должны упасть, а не тихо перейти на fallback.
+- `fallback`: не использует Qdrant/FastEmbed; подходит для bootstrap, тестов и полностью offline-установки.
+
+Почему Qdrant/FastEmbed не forced по умолчанию: установленный `./pmem` запускается через Python проекта или системный `python3`, а не через `pipx` venv инсталлятора. Поэтому эти пакеты должны быть установлены именно в то Python-окружение, которое запускает `./pmem`.
+
+Для production semantic search установите зависимости в Python, который использует `./pmem`:
+
+```bash
+python3 -m pip install qdrant-client fastembed
+./pmem doctor
+./pmem index --mode full
+./pmem search --query "payment validation"
+```
+
+Если проект использует отдельный Python:
+
+```bash
+PYTHON=/path/to/project/python ./pmem doctor
+PYTHON=/path/to/project/python ./pmem index --mode full
+```
+
+`./pmem doctor` показывает активное состояние vector backend.
 
 ## Graph Schema
 
@@ -296,4 +333,3 @@ PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest disco
 - Базовая память работает для любых текстовых проектов: индексирует файлы, chunks, поиск, git diff, context reports, тестовые команды и failure memory.
 - Глубокий symbol graph в первой версии реализован для Python через `ast` + `symtable`.
 - В проектах на JavaScript, TypeScript, Next.js и других стеках память все равно полезна на уровне файлов, текста, контекста изменений и истории ошибок. Для такой же точной карты символов, импортов и вызовов под эти языки нужно добавить отдельный parser backend.
-- Vector layer использует deterministic fallback, чтобы bootstrap и tests не требовали скачивания моделей. Для production-поиска можно подключить реальные FastEmbed/Qdrant dependencies глубже.

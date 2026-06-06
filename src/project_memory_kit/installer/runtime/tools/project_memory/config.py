@@ -41,6 +41,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "tests": {"default_commands": ["python -m unittest discover"], "test_roots": ["tests"]},
     "memory": {"max_context_chunks": 8, "vector_size": 64},
+    "vector": {
+        "backend": "auto",
+        "collection": "project_memory_chunks",
+        "embedding_model": None,
+    },
 }
 
 

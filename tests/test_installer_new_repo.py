@@ -24,6 +24,9 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertTrue((root / ".project-memory/config.yaml").exists())
             self.assertTrue((root / "tools/project_memory/cli.py").exists())
             self.assertTrue((root / "pmem").exists())
+            config_path = root / ".project-memory/config.yaml"
+            config = config_path.read_text(encoding="utf-8")
+            self.assertIn("backend: auto", config)
             agents = (root / "AGENTS.md").read_text(encoding="utf-8")
             self.assertIn("This file is the project instruction hub", agents)
             self.assertIn("## Project Rules", agents)
@@ -33,8 +36,10 @@ class InstallerNewRepoTest(unittest.TestCase):
 
             doctor = subprocess.run([str(root / "pmem"), "doctor"], cwd=root, text=True, stdout=subprocess.PIPE)
             self.assertEqual(doctor.returncode, 0, doctor.stdout)
+            self.assertIn("vector backend:", doctor.stdout)
             self.assertIn("sqlite: ok", doctor.stdout)
 
+            config_path.write_text(config.replace("backend: auto", "backend: fallback"), encoding="utf-8")
             index = subprocess.run(
                 [str(root / "pmem"), "index", "--mode", "full"], cwd=root, text=True, stdout=subprocess.PIPE
             )

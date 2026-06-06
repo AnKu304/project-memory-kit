@@ -5,6 +5,7 @@ from pathlib import Path
 
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
+from tools.project_memory.vector.qdrant_store import vector_backend_status
 
 
 def doctor(root: Path) -> tuple[bool, str]:
@@ -14,6 +15,7 @@ def doctor(root: Path) -> tuple[bool, str]:
     for key in ["graph_db", "qdrant_path", "reports_dir", "logs_dir"]:
         path = config_path(root, key)
         lines.append(f"- {key}: {path}")
+    lines.append(f"- vector backend: {vector_backend_status(cfg.get('vector', {}).get('backend', 'auto'))}")
     try:
         store = SQLiteGraphStore(root, config_path(root, "graph_db"))
         store.initialize()
@@ -25,4 +27,3 @@ def doctor(root: Path) -> tuple[bool, str]:
         lines.append(f"- sqlite: failed: {exc}")
         ok = False
     return ok, "\n".join(lines)
-
