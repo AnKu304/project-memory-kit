@@ -39,15 +39,7 @@
 - Agent protocol: `AGENTS.md` managed block.
 - Agent skill: `.agents/skills/dependency-graph-rag/`.
 
-Не используется:
-
-- Kuzu.
-- Docker.
-- Remote database.
-
 ## Важное Разделение
-
-`pmem` не является менеджером внешних skills.
 
 `project-memory-kit` устанавливает только:
 
@@ -60,24 +52,14 @@ pmem
 pmem.ps1
 ```
 
-Любые сторонние skills ставятся отдельно:
+Сторонние skills для дизайна, frontend, Next.js, документов и других задач ставятся отдельно обычным способом, например:
 
 ```bash
 npx skills add https://github.com/anthropics/skills --skill frontend-design
 npx skills add https://github.com/vercel-labs/next-skills --skill next-best-practices
 ```
 
-`pmem` не реализует и не должен реализовывать:
-
-```text
-pmem skill add
-pmem skill remove
-pmem skill list
-pmem agents sync
-.project-memory/skills.yaml
-```
-
-Внешние skills могут лежать рядом в `.agents/skills/`, но `pmem` их не трогает.
+В `AGENTS.md` есть пользовательская секция, где можно описать, когда применять такие skills в конкретном проекте.
 
 ## Соответствие Codex Skills
 
@@ -311,7 +293,7 @@ PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest disco
 
 ## Ограничения Первой Версии
 
-- Python parser намеренно консервативный: dynamic dispatch, monkey patching и сложный DI определяются с низкой уверенностью.
-- Vector layer использует deterministic fallback, чтобы bootstrap и tests не требовали скачивания моделей.
-- Для production-поиска можно включить реальные FastEmbed/Qdrant dependencies и расширить `QdrantLocalStore`.
-- Для TypeScript/Next.js нужен следующий parser backend: Tree-sitter или LSP. Внешние Next/frontend skills ставятся отдельно и не управляются `pmem`.
+- Базовая память работает для любых текстовых проектов: индексирует файлы, chunks, поиск, git diff, context reports, тестовые команды и failure memory.
+- Глубокий symbol graph в первой версии реализован для Python через `ast` + `symtable`.
+- В проектах на JavaScript, TypeScript, Next.js и других стеках память все равно полезна на уровне файлов, текста, контекста изменений и истории ошибок. Для такой же точной карты символов, импортов и вызовов под эти языки нужно добавить отдельный parser backend.
+- Vector layer использует deterministic fallback, чтобы bootstrap и tests не требовали скачивания моделей. Для production-поиска можно подключить реальные FastEmbed/Qdrant dependencies глубже.
