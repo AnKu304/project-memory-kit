@@ -1,6 +1,6 @@
 ---
 name: dependency-graph-rag
-description: Use this skill for coding, bug fixing, refactoring, API changes, config changes, migrations, routing, tests, build changes, architecture analysis, dependency impact analysis, and failure investigation in repositories that have local project memory installed.
+description: Use for the mandatory local project-memory workflow before and after meaningful code changes: dependency impact analysis, context building, coding, bug fixing, refactoring, tests, and failure investigation.
 ---
 
 # Dependency Graph RAG
@@ -105,4 +105,3 @@ Report:
 - tests run
 - failure memory updates
 - remaining risk
-

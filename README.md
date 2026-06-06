@@ -79,6 +79,22 @@ pmem agents sync
 
 Внешние skills могут лежать рядом в `.agents/skills/`, но `pmem` их не трогает.
 
+## Соответствие Codex Skills
+
+Skill `dependency-graph-rag` сделан по текущей документации Codex Skills:
+
+- `SKILL.md` содержит обязательные поля `name` и `description`;
+- инструкции лежат в самом `SKILL.md`;
+- дополнительные материалы лежат в `references/`;
+- UI metadata для Codex app лежит в `agents/openai.yaml`;
+- описание front-loaded, чтобы Codex мог выбрать skill по implicit invocation даже при сокращении списка skills.
+
+Использованные источники:
+
+- [Using skills in Codex](https://developers.openai.com/codex/skills)
+- [Create custom skills in Codex](https://developers.openai.com/codex/skills#create-a-skill)
+- [openai/skills](https://github.com/openai/skills)
+
 ## Установка В Новый Проект
 
 Один раз создайте и опубликуйте этот репозиторий на GitHub. Потом в любом новом проекте:
@@ -286,4 +302,3 @@ PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest disco
 - Vector layer использует deterministic fallback, чтобы bootstrap и tests не требовали скачивания моделей.
 - Для production-поиска можно включить реальные FastEmbed/Qdrant dependencies и расширить `QdrantLocalStore`.
 - Для TypeScript/Next.js нужен следующий parser backend: Tree-sitter или LSP. Внешние Next/frontend skills ставятся отдельно и не управляются `pmem`.
-
