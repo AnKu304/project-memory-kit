@@ -1,0 +1,289 @@
+# project-memory-kit
+
+`project-memory-kit` устанавливает локальную проектную память для coding agents в любой новый или уже существующий репозиторий.
+
+Идея простая: если один проект ведется в нескольких чатах под разные задачи, агент не должен каждый раз начинать с нуля и править файлы без учета зависимостей. В проект добавляется общий локальный слой памяти: граф файлов/символов/импортов, поиск по chunks, impact analysis, контекст изменений, выбор тестов и память о падениях.
+
+## Что Это Решает
+
+Обычная проблема агента:
+
+```text
+прочитал задачу -> открыл очевидный файл -> поправил -> не учел зависимости
+```
+
+Желаемый процесс:
+
+```text
+прочитал задачу
+-> обновил локальную память проекта
+-> нашел затронутые файлы и символы
+-> увидел reverse imports/callers/tests/старые failures
+-> собрал CHANGE_CONTEXT.md
+-> сделал минимальную правку
+-> пересчитал impact
+-> запустил целевые тесты
+-> записал failure memory, если тест упал
+-> отчитался о рисках
+```
+
+Такой процесс особенно полезен, когда один и тот же проект открывается в нескольких Codex/ChatGPT чатах: память лежит в проекте, а не в конкретном диалоге.
+
+## Финальный Стек
+
+- Graph memory: SQLite property graph.
+- Vector boundary: Qdrant local mode path with deterministic offline vector fallback.
+- Embeddings: FastEmbed-compatible architecture, deterministic fallback for tests/offline bootstrap.
+- Parser: Python `ast` + `symtable`.
+- CLI: `pmem`.
+- Agent protocol: `AGENTS.md` managed block.
+- Agent skill: `.agents/skills/dependency-graph-rag/`.
+
+Не используется:
+
+- Kuzu.
+- Docker.
+- Remote database.
+
+## Важное Разделение
+
+`pmem` не является менеджером внешних skills.
+
+`project-memory-kit` устанавливает только:
+
+```text
+.project-memory/
+tools/project_memory/
+.agents/skills/dependency-graph-rag/
+AGENTS.md managed block
+pmem
+pmem.ps1
+```
+
+Любые сторонние skills ставятся отдельно:
+
+```bash
+npx skills add https://github.com/anthropics/skills --skill frontend-design
+npx skills add https://github.com/vercel-labs/next-skills --skill next-best-practices
+```
+
+`pmem` не реализует и не должен реализовывать:
+
+```text
+pmem skill add
+pmem skill remove
+pmem skill list
+pmem agents sync
+.project-memory/skills.yaml
+```
+
+Внешние skills могут лежать рядом в `.agents/skills/`, но `pmem` их не трогает.
+
+## Установка В Новый Проект
+
+Один раз создайте и опубликуйте этот репозиторий на GitHub. Потом в любом новом проекте:
+
+```bash
+mkdir my-app
+cd my-app
+git init
+pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+```
+
+После установки в проекте появятся:
+
+```text
+AGENTS.md
+.agents/skills/dependency-graph-rag/
+.project-memory/config.yaml
+.project-memory/.gitignore
+.project-memory/README.md
+tools/project_memory/
+pmem
+pmem.ps1
+.gitignore
+```
+
+Проверка:
+
+```bash
+./pmem doctor
+./pmem index --mode full
+./pmem impact --base HEAD --format markdown
+./pmem context --task "test task" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+```
+
+## Установка В Существующий Проект
+
+В корне существующего repo:
+
+```bash
+pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+```
+
+Installer:
+
+- не создает вложенную папку проекта;
+- не перетирает существующий `AGENTS.md`;
+- обновляет только блок `<!-- PMEM:BEGIN --> ... <!-- PMEM:END -->`;
+- не трогает внешние skills в `.agents/skills/*`;
+- устанавливает только `.agents/skills/dependency-graph-rag/`;
+- безопасно merge-ит `.gitignore`;
+- создает локальный runtime `tools/project_memory/`;
+- создает wrappers `./pmem` и `./pmem.ps1`.
+
+## Что Коммитить
+
+Коммитить:
+
+```bash
+git add AGENTS.md \
+  .agents/skills/dependency-graph-rag \
+  .project-memory/config.yaml \
+  .project-memory/.gitignore \
+  .project-memory/README.md \
+  tools/project_memory \
+  pmem pmem.ps1 .gitignore
+git commit -m "Add local project memory"
+```
+
+Не коммитить:
+
+```text
+.project-memory/graph.sqlite
+.project-memory/graph.sqlite-*
+.project-memory/qdrant/
+.project-memory/runtime/
+.project-memory/logs/
+.project-memory/reports/
+.project-memory/cache/
+.project-memory/models/
+.project-memory/tmp/
+```
+
+Эти пути добавляются в managed-блок `.gitignore`.
+
+## Обязательный Workflow Агента
+
+Перед осмысленными правками:
+
+```bash
+./pmem doctor
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem context --task "<current task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+```
+
+Агент обязан прочитать:
+
+```text
+.project-memory/reports/CHANGE_CONTEXT.md
+```
+
+После правок:
+
+```bash
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem tests --base HEAD
+```
+
+При падении тестов:
+
+```bash
+mkdir -p .project-memory/logs
+./pmem record-failure --command "<failed command>" --log-file "<log path>"
+./pmem context --task "fix failing tests after current change" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+```
+
+## Команды
+
+Installer-level:
+
+```bash
+pmem init --target .
+pmem install --target .
+pmem upgrade --target .
+pmem uninstall --target . --keep-memory
+pmem uninstall --target . --purge
+```
+
+Installed project runtime:
+
+```bash
+./pmem init
+./pmem doctor
+./pmem index --mode full
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem impact --base HEAD --format json
+./pmem context --task "описание задачи" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
+./pmem tests --base HEAD
+./pmem record-failure --command "python -m unittest" --log-file ".project-memory/logs/test.log"
+./pmem search --query "payment validation" --limit 10
+```
+
+## Как Работает Индексация
+
+Индексатор:
+
+- уважает `.project-memory/config.yaml`;
+- пропускает `.git`, `.project-memory`, virtualenv, dependency dirs, build dirs, caches;
+- не индексирует `.env`, private keys, tokens, credentials, secrets и binary files;
+- хеширует файлы и пропускает неизмененные;
+- для Python извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings/line ranges;
+- сохраняет nodes/edges/chunks в SQLite;
+- пишет FTS chunks;
+- пишет local vector records в `.project-memory/qdrant/`.
+
+## Graph Schema
+
+Node kinds:
+
+```text
+Project, Directory, File, Module, Symbol, Chunk, Layer, Test, Command, Error, Failure, Fix, ChangeSet, Decision
+```
+
+Edge kinds:
+
+```text
+CONTAINS, DEFINES, IMPORTS, CALLS, INHERITS, REFERENCES, BELONGS_TO_LAYER, TESTS, COVERS_FILE, DESCRIBES, MENTIONS, TOUCHES, OCCURRED_IN, FIXED_BY, CHANGED, CONSTRAINS
+```
+
+Базовые связи:
+
+```text
+File -> DEFINES -> Symbol
+Chunk -> DESCRIBES -> Symbol
+Chunk -> DESCRIBES -> File
+Test -> TESTS -> Symbol
+Test -> COVERS_FILE -> File
+ChangeSet -> TOUCHES -> File/Symbol
+Error -> OCCURRED_IN -> File/Symbol/Test
+Error -> FIXED_BY -> ChangeSet/Fix
+```
+
+## Локальная Проверка Этого Репозитория
+
+```bash
+PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest discover -s tests
+```
+
+Проверка установки в temp repo покрывает:
+
+- создание boilerplate;
+- сохранение существующего `AGENTS.md`;
+- замену только managed-блока;
+- safe merge `.gitignore`;
+- сохранность внешних skills;
+- работу `./pmem doctor`;
+- работу `./pmem index`;
+- генерацию `CHANGE_CONTEXT.md`.
+
+## Ограничения Первой Версии
+
+- Python parser намеренно консервативный: dynamic dispatch, monkey patching и сложный DI определяются с низкой уверенностью.
+- Vector layer использует deterministic fallback, чтобы bootstrap и tests не требовали скачивания моделей.
+- Для production-поиска можно включить реальные FastEmbed/Qdrant dependencies и расширить `QdrantLocalStore`.
+- Для TypeScript/Next.js нужен следующий parser backend: Tree-sitter или LSP. Внешние Next/frontend skills ставятся отдельно и не управляются `pmem`.
+

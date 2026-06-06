@@ -1,0 +1,10 @@
+.project-memory/graph.sqlite
+.project-memory/graph.sqlite-*
+.project-memory/qdrant/
+.project-memory/runtime/
+.project-memory/logs/
+.project-memory/reports/
+.project-memory/cache/
+.project-memory/models/
+.project-memory/tmp/
+

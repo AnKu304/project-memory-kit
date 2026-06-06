@@ -1,0 +1,45 @@
+version: 1
+project:
+  name: auto
+paths:
+  graph_db: .project-memory/graph.sqlite
+  qdrant_path: .project-memory/qdrant
+  reports_dir: .project-memory/reports
+  logs_dir: .project-memory/logs
+  cache_dir: .project-memory/cache
+  models_dir: .project-memory/models
+indexing:
+  include_extensions:
+    - .py
+    - .md
+    - .txt
+    - .toml
+    - .yaml
+    - .yml
+    - .json
+  ignore:
+    - .git/
+    - .project-memory/
+    - __pycache__/
+    - .venv/
+    - venv/
+    - node_modules/
+    - tools/project_memory/
+    - dist/
+    - build/
+    - .next/
+    - .cache/
+    - "*.env"
+    - ".env*"
+    - "*.pem"
+    - "*.key"
+    - "*secret*"
+    - "*credential*"
+tests:
+  default_commands:
+    - python -m unittest discover
+  test_roots:
+    - tests
+memory:
+  max_context_chunks: 8
+  vector_size: 64

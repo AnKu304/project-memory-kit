@@ -1,0 +1,9 @@
+name: dependency-graph-rag
+display_name: Dependency Graph RAG
+description: Runs local project-memory workflow before and after meaningful code changes.
+version: 1
+metadata:
+  installer: project-memory-kit
+  command_unix: ./pmem
+  command_windows: .\pmem.ps1
+
