@@ -144,7 +144,7 @@ Installed runtime:
 - SQLite stores the project graph: files, symbols, chunks, imports, calls, inheritance, failures.
 - The knowledge layer stores research, architecture, SEO, design, UX, product mechanics, and other project principles.
 - Full knowledge records live in `.project-memory/knowledge/**/*.md`; SQLite stores metadata, status, versions, and links.
-- Knowledge search uses only `current` records by default. When a principle changes, use `knowledge update` instead of creating a competing current record.
+- Knowledge search uses only `current` records by default. When a principle changes, `knowledge update` keeps one current record instead of creating a competing copy.
 - The rationale layer stores verified causes: decisions, rejected alternatives, experiments, invariants, and evidence.
 - Full rationale records live in `.project-memory/rationale/**/*.md`; context receives only short snippets, ids, score/reason, and paths to full records.
 - Search is ranked locally from FTS/vector candidates, score, source, and matched terms. Full records are opened only when needed.
@@ -184,7 +184,7 @@ When it is obsolete:
 
 ## Rationale Layer
 
-Use this for "why", rejected approaches, error causes, experiments, and project invariants. It is not a place for hidden agent reasoning: records should contain verified decisions, alternatives, and evidence.
+The rationale layer is used for "why", rejected approaches, error causes, experiments, and project invariants. It is not a place for hidden agent reasoning: records should contain verified decisions, alternatives, and evidence.
 
 Example:
 
