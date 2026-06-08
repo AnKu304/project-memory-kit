@@ -88,6 +88,7 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
+./pmem context --task "<task>" --base HEAD --compiled --out .project-memory/reports/COMPILED_CONTEXT.md
 ```
 
 Контекст ограничивается короткими выдержками, id и путями к полной записи. Большие файлы, логи и отчеты проверяются локальными командами; в модель передается только нужный итог или короткий фрагмент.
@@ -130,6 +131,7 @@ pmem version
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "описание задачи"
+./pmem context --task "описание задачи" --compiled
 ./pmem search --query "payment validation" --limit 10
 ./pmem search --query "payment validation" --limit 10 --debug
 ./pmem tests --base HEAD
@@ -214,6 +216,12 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ./pmem doctor
 ```
 
+Context Compiler
+
+Компилятор контекста
+
+`./pmem context --compiled` собирает рабочий пакет задачи: local evidence, preflight/postflight gate, impact, ranked search, knowledge/rationale, lifecycle и provenance. Это основной режим для сложных задач, где важно не раздувать модельный контекст.
+
 ## MCP
 
 `./pmem mcp` запускает локальный stdio MCP server поверх того же runtime и той же `.project-memory/` базы. Отдельная память не создается, данные во внешний сервис не отправляются.
@@ -228,6 +236,7 @@ MCP умеет создавать, назначать и закрывать за
 
 Кратко:
 
+- `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.
 - `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions переведен на Node 24-capable actions и Node 22/24 matrix.
 - `0.19.0`: MCP Task Write Tools; MCP может создавать, назначать и закрывать `.agents/tasks/`.
 - `0.18.0`: Install Wizard; `pmem init --interactive` для выбора профиля и optional модулей.

@@ -347,6 +347,53 @@ def _bind_cross_file_symbols(store: SQLiteGraphStore) -> int:
     return bound
 
 
+def _source_candidates_for_test(path: str) -> list[str]:
+    source = Path(path)
+    name = source.name
+    parent = source.parent
+    candidates: list[Path] = []
+    if name.startswith("test_") and source.suffix == ".py":
+        candidates.append(Path("src") / f"{name[5:]}")
+        candidates.append(parent.parent / f"{name[5:]}")
+    for marker in [".test", ".spec"]:
+        if marker in source.stem:
+            base = source.stem.split(marker, 1)[0] + source.suffix
+            candidates.extend([parent / base, parent.parent / base, Path("src") / base])
+    if "__tests__" in source.parts:
+        parts = list(source.parts)
+        index = parts.index("__tests__")
+        candidates.append(Path(*parts[:index], parts[-1].replace(".test", "").replace(".spec", "")))
+    return [candidate.as_posix() for candidate in candidates if candidate.as_posix() != path]
+
+
+def _bind_test_files(store: SQLiteGraphStore) -> int:
+    test_rows = store.query(
+        """
+        SELECT id, path
+        FROM nodes
+        WHERE kind = 'File' AND (
+          path LIKE 'tests/%' OR path LIKE '%/__tests__/%'
+          OR path LIKE '%.test.%' OR path LIKE '%.spec.%'
+        )
+        """
+    )
+    bound = 0
+    for test in test_rows:
+        for candidate in _source_candidates_for_test(str(test["path"])):
+            source_rows = store.query("SELECT id FROM nodes WHERE kind = 'File' AND path = ?", (candidate,))
+            for source in source_rows:
+                store.upsert_edge(
+                    test["id"],
+                    source["id"],
+                    "TESTS",
+                    source="test_binding",
+                    confidence=0.72,
+                    evidence=str(test["path"]),
+                )
+                bound += 1
+    return bound
+
+
 def _index_text_file(
     path: Path,
     rel: str,
@@ -483,6 +530,9 @@ def index_project(root: Path, mode: str = "changed") -> str:
     bound = _bind_cross_file_symbols(store)
     if bound:
         summary.append(f"bindings={bound}")
+    test_bound = _bind_test_files(store)
+    if test_bound:
+        summary.append(f"test_bindings={test_bound}")
     route_bound = bind_next_route_components(store)
     if route_bound:
         summary.append(f"route_bindings={route_bound}")

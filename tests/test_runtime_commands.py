@@ -110,6 +110,149 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(watch.returncode, 0, watch.stderr)
             self.assertIn("watch check", watch.stdout)
 
+    def test_compiled_context_includes_evidence_gates_lifecycle_and_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root)
+            (root / "app.py").write_text("def alpha_payment():\n    return False\n", encoding="utf-8")
+            tests_dir = root / "tests"
+            tests_dir.mkdir()
+            (tests_dir / "test_app.py").write_text("from app import alpha_payment\n", encoding="utf-8")
+            subprocess.run(["git", "add", "app.py", "tests/test_app.py"], cwd=root)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            notes = root / "notes"
+            notes.mkdir()
+            (notes / "rationale.md").write_text("# Payment Rationale\n\nUse non-negative checks.\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "rationale",
+                    "add",
+                    "--type",
+                    "decision",
+                    "--title",
+                    "Payment Rationale",
+                    "--file",
+                    "notes/rationale.md",
+                    "--why",
+                    "avoids invalid payments",
+                    "--evidence",
+                    "tests/test_app.py",
+                ],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            (root / "app.py").write_text("def alpha_payment():\n    return True\n", encoding="utf-8")
+
+            context = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "context",
+                    "--task",
+                    "alpha payment",
+                    "--compiled",
+                    "--out",
+                    ".project-memory/reports/COMPILED.md",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(context.returncode, 0, context.stderr)
+            content = (root / ".project-memory/reports/COMPILED.md").read_text(encoding="utf-8")
+            self.assertIn("# Compiled Project Context", content)
+            self.assertIn("## Local Evidence", content)
+            self.assertIn("## Preflight Gate", content)
+            self.assertIn("## Memory Lifecycle", content)
+            self.assertIn("## Provenance", content)
+            self.assertIn("components:", content)
+            self.assertIn("tests/test_app.py", content)
+            self.assertIn("evidence: tests/test_app.py", content)
+
+    def test_js_ts_test_binding_and_builtin_golden_eval(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root)
+            src = root / "src"
+            src.mkdir()
+            (root / "package.json").write_text(
+                json.dumps({"scripts": {"test": "vitest run"}}),
+                encoding="utf-8",
+            )
+            (src / "Button.tsx").write_text(
+                "export function Button() {\n  return <button>Pay</button>\n}\n",
+                encoding="utf-8",
+            )
+            (src / "Button.test.tsx").write_text(
+                "import { Button } from './Button'\nButton()\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "package.json", "src/Button.tsx", "src/Button.test.tsx"], cwd=root)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            index = subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(index.returncode, 0, index.stderr)
+            self.assertIn("test_bindings=", index.stdout)
+
+            evaluation = subprocess.run(
+                [str(root / "pmem"), "eval"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(evaluation.returncode, 0, evaluation.stderr)
+            self.assertIn("golden-js-ts-file", evaluation.stdout)
+            self.assertIn("failed=0", evaluation.stdout)
+
+            (src / "Button.tsx").write_text(
+                "export function Button() {\n  return <button>Checkout</button>\n}\n",
+                encoding="utf-8",
+            )
+            impact = subprocess.run(
+                [str(root / "pmem"), "impact", "--base", "HEAD"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(impact.returncode, 0, impact.stderr)
+            self.assertIn("npm test -- src/Button.test.tsx", impact.stdout)
+            self.assertIn("confidence=0.72", impact.stdout)
+
     def test_report_summarizes_memory_quality_as_markdown_and_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

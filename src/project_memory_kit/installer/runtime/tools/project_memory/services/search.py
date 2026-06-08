@@ -128,6 +128,24 @@ def _layer_component(layer: str | None) -> float:
     return 0.55
 
 
+def _lifecycle_component(store: SQLiteGraphStore, row: dict[str, object]) -> tuple[float, str]:
+    path = str(row.get("path") or "")
+    if "/knowledge/" in path or path.startswith(".project-memory/knowledge/"):
+        rows = store.query("SELECT status FROM knowledge_entries WHERE path = ?", (path,))
+    elif "/rationale/" in path or path.startswith(".project-memory/rationale/"):
+        rows = store.query("SELECT status FROM rationale_entries WHERE path = ?", (path,))
+    else:
+        return 1.0, "non-memory"
+    if not rows:
+        return 0.85, "memory record missing lifecycle row"
+    status = str(rows[0]["status"])
+    if status == "current":
+        return 1.0, "current"
+    if status == "superseded":
+        return 0.35, "superseded"
+    return 0.25, status
+
+
 def _weights(root: Path) -> dict[str, float]:
     configured = load_config(root).get("search", {}).get("weights", {})
     defaults = {
@@ -190,14 +208,50 @@ def _apply_hybrid_scores(root: Path, store: SQLiteGraphStore, query: str, rows: 
         layer = _layer_for_row(store, row)
         components["layer"] = _layer_component(layer)
         components["recency"] = _recency_component(store, row)
+        lifecycle, lifecycle_reason = _lifecycle_component(store, row)
+        components["lifecycle"] = lifecycle
         score = min(1.0, sum(weights.get(key, 0.0) * value for key, value in components.items()))
+        score *= lifecycle
         row["score"] = score
         row["source"] = "hybrid"
         row["components"] = {key: round(value, 4) for key, value in sorted(components.items())}
         row["reason"] = "hybrid rank from " + "+".join(str(item) for item in row.get("sources", ["local"]))
+        if lifecycle != 1.0:
+            row["reason"] += f"; lifecycle penalty: {lifecycle_reason}"
         scored.append(row)
     scored.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
     return scored
+
+
+def _snippet_key(item: dict[str, object]) -> str:
+    snippet = re.sub(r"\s+", " ", str(item.get("snippet") or "").lower()).strip()
+    return snippet[:180]
+
+
+def _diversify_results(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    kept: list[dict[str, object]] = []
+    seen_snippets: set[str] = set()
+    path_counts: dict[str, int] = {}
+    for row in rows:
+        key = _snippet_key(row)
+        if key and key in seen_snippets:
+            continue
+        path = str(row.get("path") or "")
+        count = path_counts.get(path, 0)
+        if count >= 2 and float(row.get("score") or 0.0) < 0.92:
+            continue
+        if count:
+            row["score"] = float(row.get("score") or 0.0) * (0.9 ** count)
+            row["reason"] = str(row.get("reason") or "matched") + f"; diversity penalty: same path #{count + 1}"
+            components = dict(row.get("components") or {})
+            components["diversity"] = round(0.9 ** count, 4)
+            row["components"] = components
+        path_counts[path] = count + 1
+        if key:
+            seen_snippets.add(key)
+        kept.append(row)
+    kept.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return kept
 
 
 def format_search_result(item: dict[str, Any], debug: bool = False) -> str:
@@ -343,7 +397,7 @@ def search(root: Path, query: str, limit: int = 10, layer: str | None = None, de
         candidates.append(row)
         if len(candidates) >= limit * 3:
             break
-    results = _apply_hybrid_scores(root, store, query, _merge_candidates(candidates))
+    results = _diversify_results(_apply_hybrid_scores(root, store, query, _merge_candidates(candidates)))
     if not debug:
         for item in results:
             item.pop("sources", None)

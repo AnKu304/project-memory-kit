@@ -88,6 +88,7 @@ Before editing:
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
+./pmem context --task "<task>" --base HEAD --compiled --out .project-memory/reports/COMPILED_CONTEXT.md
 ```
 
 Context stays bounded: short snippets, ids, and paths to full records. Large files, logs, and reports are inspected with local commands first; only the relevant result or short excerpt goes into the model context.
@@ -130,6 +131,7 @@ Installed runtime:
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "task description"
+./pmem context --task "task description" --compiled
 ./pmem search --query "payment validation" --limit 10
 ./pmem search --query "payment validation" --limit 10 --debug
 ./pmem tests --base HEAD
@@ -204,6 +206,10 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ./pmem doctor
 ```
 
+Context Compiler
+
+`./pmem context --compiled` builds a task packet with local evidence, preflight/postflight gates, impact, ranked search, knowledge/rationale, lifecycle, and provenance. Use it for complex tasks where context should stay bounded and evidence-backed.
+
 ## MCP
 
 `./pmem mcp` starts a local stdio MCP server over the same runtime and the same `.project-memory/` database. It does not create separate memory or send data to an external service.
@@ -214,6 +220,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.
 - `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions moved to Node 24-capable actions and a Node 22/24 matrix.
 - `0.19.0`: MCP Task Write Tools; MCP can create, assign, and close `.agents/tasks/`.
 - `0.18.0`: Install Wizard; `pmem init --interactive` for choosing the profile and optional modules.

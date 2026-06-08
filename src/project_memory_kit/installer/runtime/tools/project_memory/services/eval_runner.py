@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from tools.project_memory.config import config_path
+from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.services.search import search
 from tools.project_memory.services.status import project_status
 
@@ -35,22 +37,72 @@ def _case_passed(case: dict[str, Any], rows: list[dict[str, object]]) -> tuple[b
     return True, "matched"
 
 
+def _first_file(store: SQLiteGraphStore, where: str) -> str | None:
+    rows = store.query(
+        f"""
+        SELECT path
+        FROM nodes
+        WHERE kind = 'File' AND {where}
+          AND path NOT LIKE 'tests/%'
+          AND path NOT LIKE '%/__tests__/%'
+          AND path NOT LIKE '%.test.%'
+          AND path NOT LIKE '%.spec.%'
+        ORDER BY path
+        LIMIT 1
+        """
+    )
+    return str(rows[0]["path"]) if rows else None
+
+
+def _first_route(store: SQLiteGraphStore) -> str | None:
+    rows = store.query("SELECT path FROM nodes WHERE kind = 'Route' ORDER BY path LIMIT 1")
+    return str(rows[0]["path"]) if rows else None
+
+
+def _builtin_cases(root: Path) -> list[dict[str, Any]]:
+    store = SQLiteGraphStore(root, config_path(root, "graph_db"))
+    store.initialize()
+    cases: list[dict[str, Any]] = []
+    python_path = _first_file(store, "language = 'python'")
+    js_path = _first_file(store, "language IN ('javascript', 'typescript')")
+    route_path = _first_route(store)
+    if python_path:
+        cases.append({"id": "golden-python-file", "query": Path(python_path).stem, "expect_path": python_path})
+    if js_path:
+        cases.append({"id": "golden-js-ts-file", "query": Path(js_path).stem, "expect_path": js_path})
+    if python_path and js_path:
+        cases.append({"id": "golden-mixed-project", "query": Path(python_path).stem, "expect_path": python_path})
+    if route_path:
+        cases.append({"id": "golden-next-route", "query": Path(route_path).stem, "expect_path": route_path})
+    return cases
+
+
 def run_eval(root: Path, file_path: Path | None = None, limit: int = 10) -> dict[str, Any]:
     if file_path is None:
         status = project_status(root)
         passed = bool(status["index"]["fresh"])
-        return {
-            "total": 1,
-            "passed": 1 if passed else 0,
-            "failed": 0 if passed else 1,
-            "cases": [
+        results = [
+            {
+                "id": "builtin-index-fresh",
+                "passed": passed,
+                "reason": "index is fresh" if passed else "index is stale",
+                "top_paths": [],
+            }
+        ]
+        for case in _builtin_cases(root):
+            rows = search(root, str(case["query"]), limit=limit)
+            case_passed, reason = _case_passed(case, rows)
+            results.append(
                 {
-                    "id": "builtin-index-fresh",
-                    "passed": passed,
-                    "reason": "index is fresh" if passed else "index is stale",
+                    "id": case["id"],
+                    "query": case["query"],
+                    "passed": case_passed,
+                    "reason": reason,
+                    "top_paths": [str(row.get("path") or "") for row in rows[:5]],
                 }
-            ],
-        }
+            )
+        passed_count = sum(1 for item in results if item["passed"])
+        return {"total": len(results), "passed": passed_count, "failed": len(results) - passed_count, "cases": results}
 
     cases = _load_cases(file_path)
     results: list[dict[str, Any]] = []

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.21.0
+
+Added:
+
+- Depth Improvements.
+- Глубинные улучшения.
+- `./pmem context --compiled`.
+- Built-in golden evals for indexed Python, JS/TS, mixed, and Next-route projects.
+- Local evidence, task gates, memory lifecycle, and provenance sections in compiled context.
+
+Updated:
+
+- Search now applies deterministic diversity and lifecycle penalties for superseded/archived memory records.
+- Impact analysis now uses test-to-source graph bindings and surfaces graph confidence in affected-test reasons.
+- JS/TS indexing now records local test bindings for `.test` / `.spec` files.
+
+Removed:
+
+- Nothing.
+
+Better than 0.20.0:
+
+- Agents get one bounded, evidence-backed task packet instead of manually stitching together many local reports.
+- Retrieval is less repetitive and less likely to surface stale memory as a top result.
+- Test selection is more accurate for JS/TS projects with colocated test files.
+
 ## 0.20.0
 
 Added:

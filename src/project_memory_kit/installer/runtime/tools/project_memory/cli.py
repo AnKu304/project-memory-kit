@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 
+from tools.project_memory.services.context_compiler import write_compiled_context
 from tools.project_memory.services.context_builder import write_context
 from tools.project_memory.services.doctor import doctor as doctor_service
 from tools.project_memory.services.eval_runner import format_eval, run_eval
@@ -110,7 +111,8 @@ def command_context(args: argparse.Namespace) -> int:
     out = Path(args.out)
     if not out.is_absolute():
         out = root() / out
-    written = write_context(root(), args.task, args.base, out, reset_task=args.reset_task)
+    writer = write_compiled_context if args.compiled else write_context
+    written = writer(root(), args.task, args.base, out, reset_task=args.reset_task)
     print(written)
     return 0
 
@@ -488,6 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--base", default="HEAD")
     p.add_argument("--out", default=".project-memory/reports/CHANGE_CONTEXT.md")
     p.add_argument("--reset-task", action="store_true")
+    p.add_argument("--compiled", action="store_true")
     p.set_defaults(func=command_context)
 
     p = sub.add_parser("tests")

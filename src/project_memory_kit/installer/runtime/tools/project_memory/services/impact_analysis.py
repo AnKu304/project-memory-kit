@@ -104,6 +104,30 @@ def _route_impacts(store: SQLiteGraphStore, paths: set[str]) -> list[dict[str, A
     return impacts
 
 
+def _linked_test_targets(root: Path, store: SQLiteGraphStore, file_id: str, path: str) -> dict[str, str]:
+    rows = store.query(
+        """
+        SELECT src.path, e.confidence
+        FROM edges e
+        JOIN nodes src ON src.id = e.src_id
+        WHERE e.kind = 'TESTS' AND e.dst_id = ?
+        """,
+        (file_id,),
+    )
+    targets: dict[str, str] = {}
+    package_test = _package_test_command(root)
+    for row in rows:
+        if not row["path"]:
+            continue
+        test_path = str(row["path"])
+        if Path(test_path).suffix in JS_TS_SUFFIXES and package_test:
+            target = f"{package_test} -- {test_path}"
+        else:
+            target = test_path
+        targets[target] = f"test binding for {path} (confidence={float(row['confidence'] or 0.0):.2f})"
+    return targets
+
+
 def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
     ensure_fresh_index(root, "impact")
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
@@ -139,7 +163,10 @@ def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
                 )
                 for caller in callers:
                     if caller["path"]:
-                        affected_files[caller["path"]] = f"reverse {caller['kind']} from {caller['fqn']}"
+                        affected_files[caller["path"]] = (
+                            f"reverse {caller['kind']} from {caller['fqn']} "
+                            f"(confidence={float(caller['confidence'] or 0.0):.2f})"
+                        )
 
         file_rows = store.query("SELECT id FROM nodes WHERE kind = 'File' AND path = ?", (path,))
         for file_row in file_rows:
@@ -155,6 +182,7 @@ def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
             for item in imports:
                 if item["path"]:
                     affected_files[item["path"]] = f"reverse import via {item['evidence']}"
+            tests.update(_linked_test_targets(root, store, str(file_row["id"]), path))
 
         if path.startswith("tests/") or Path(path).name.startswith("test_"):
             tests[path] = "changed test file"
@@ -166,9 +194,9 @@ def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
             package_test = _package_test_command(root)
             for candidate in _js_test_candidates(root, path):
                 if package_test:
-                    tests[f"{package_test} -- {candidate.as_posix()}"] = f"path heuristic for {path}"
+                    tests.setdefault(f"{package_test} -- {candidate.as_posix()}", f"path heuristic for {path}")
                 else:
-                    tests[candidate.as_posix()] = f"path heuristic for {path}"
+                    tests.setdefault(candidate.as_posix(), f"path heuristic for {path}")
 
     if changed and not tests:
         for command, reason in _default_test_commands(root, changed):
