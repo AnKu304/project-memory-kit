@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.15.0
+
+Added:
+
+- TS/Next Graph Depth.
+- Глубина графа TypeScript/Next.js.
+- Route-to-component graph edges for Next.js app routes.
+- Client/server component boundary metadata from `use client` and app-route defaults.
+- HTTP method metadata for Next.js `route.ts/js` files.
+- JS/TS route impact details in impact reports.
+
+Updated:
+
+- Next route nodes now connect to local route components and imported JSX components when bindings are available.
+- File and symbol nodes can include component boundary metadata.
+
+Removed:
+
+- Nothing.
+
+Better than 0.14.0:
+
+- Agents get more accurate frontend dependency context before editing Next.js pages or API routes.
+- Impact reports show route-level meaning instead of only changed file paths.
+
 ## 0.14.0
 
 Added:

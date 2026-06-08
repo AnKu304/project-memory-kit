@@ -12,12 +12,17 @@ from tools.project_memory.parsers.js_ts import JsTsParser
 from tools.project_memory.parsers.js_ts_imports import JS_TS_EXTENSIONS, language_for_path as js_ts_language_for_path
 from tools.project_memory.parsers.python_ast import PythonAstParser
 from tools.project_memory.parsers.symbol_model import ParseResult, Symbol
+from tools.project_memory.services.next_graph import (
+    bind_next_route_components,
+    file_properties,
+    is_route_component_symbol,
+    next_route_info,
+)
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
 
 PYTHON_PARSER = PythonAstParser()
 JS_TS_PARSER = JsTsParser()
-NEXT_ROUTE_FILES = {"page", "layout", "route", "loading", "error", "not-found", "template", "default"}
 
 
 def _iter_files(root: Path, mode: str, store: SQLiteGraphStore | None = None) -> list[Path]:
@@ -68,31 +73,6 @@ def _language_for_path(path: Path) -> str | None:
     return None
 
 
-def _next_route_info(path: Path, rel: str) -> dict[str, str] | None:
-    if path.suffix not in JS_TS_EXTENSIONS or path.stem not in NEXT_ROUTE_FILES:
-        return None
-    parts = Path(rel).parts
-    try:
-        app_index = parts.index("app")
-    except ValueError:
-        return None
-    route_parts = []
-    for part in parts[app_index + 1 : -1]:
-        if part.startswith("(") and part.endswith(")"):
-            continue
-        route_parts.append(part)
-    route = "/" + "/".join(route_parts)
-    if route != "/":
-        route = route.rstrip("/")
-    route_kind = "api_route" if path.stem == "route" else "page_route"
-    return {
-        "framework": "next",
-        "route": route,
-        "route_kind": route_kind,
-        "route_file": path.name,
-    }
-
-
 def _target_for_name(name: str, symbols: list[Symbol], symbol_ids: dict[str, str]) -> str | None:
     if not name:
         return None
@@ -116,12 +96,26 @@ def _index_parse_result(
     result: ParseResult,
     store: SQLiteGraphStore,
     vectors: QdrantLocalStore,
+    route_id: str | None = None,
+    route_info: dict[str, object] | None = None,
+    component_boundary: str | None = None,
 ) -> list[str]:
     module_id = store.upsert_node(kind="Module", name=result.module, fqn=result.module, path=rel, language=language)
     store.upsert_edge(file_id, module_id, "DEFINES", evidence=rel)
 
     symbol_ids: dict[str, str] = {}
     for symbol in result.symbols:
+        properties = {
+            "kind": symbol.kind,
+            "signature": symbol.signature,
+            "docstring": symbol.docstring,
+            "decorators": symbol.decorators,
+            "bases": symbol.bases,
+            "calls": symbol.calls,
+            "references": symbol.references,
+        }
+        if component_boundary:
+            properties["component_boundary"] = component_boundary
         symbol_id = store.upsert_node(
             kind="Symbol",
             name=symbol.name,
@@ -130,15 +124,7 @@ def _index_parse_result(
             language=language,
             start_line=symbol.start_line,
             end_line=symbol.end_line,
-            properties={
-                "kind": symbol.kind,
-                "signature": symbol.signature,
-                "docstring": symbol.docstring,
-                "decorators": symbol.decorators,
-                "bases": symbol.bases,
-                "calls": symbol.calls,
-                "references": symbol.references,
-            },
+            properties=properties,
         )
         symbol_ids[symbol.fqn] = symbol_id
         store.upsert_edge(file_id, symbol_id, "DEFINES", evidence=symbol.fqn)
@@ -177,6 +163,20 @@ def _index_parse_result(
             target = _target_for_name(base, result.symbols, symbol_ids)
             if target:
                 store.upsert_edge(symbol_id, target, "INHERITS", confidence=0.65, evidence=base)
+
+    if route_id and route_info:
+        for symbol in result.symbols:
+            symbol_id = symbol_ids.get(symbol.fqn)
+            if symbol_id and is_route_component_symbol(symbol, route_info):
+                store.upsert_edge(
+                    route_id,
+                    symbol_id,
+                    "ROUTE_COMPONENT",
+                    source="next_route",
+                    confidence=0.9,
+                    evidence=symbol.fqn,
+                    properties={"route": route_info.get("route"), "boundary": component_boundary},
+                )
 
     for item in result.imports:
         if item.target_path:
@@ -347,6 +347,109 @@ def _bind_cross_file_symbols(store: SQLiteGraphStore) -> int:
     return bound
 
 
+def _index_text_file(
+    path: Path,
+    rel: str,
+    file_id: str,
+    file_hash: str,
+    store: SQLiteGraphStore,
+    vectors: QdrantLocalStore,
+) -> None:
+    content = path.read_text(encoding="utf-8", errors="replace")
+    line_count = max(1, len(content.splitlines()))
+    chunk_id = store.upsert_chunk(rel, rel, 1, line_count, content)
+    store.upsert_edge(chunk_id, file_id, "DESCRIBES", evidence=rel)
+    vectors.upsert_chunk(
+        chunk_id,
+        content,
+        {
+            "chunk_id": chunk_id,
+            "node_id": chunk_id,
+            "file_path": rel,
+            "symbol_id": None,
+            "symbol_fqn": None,
+            "start_line": 1,
+            "end_line": line_count,
+            "kind": "file",
+            "hash": file_hash,
+        },
+    )
+    store.update_file_state(rel, file_hash, "text", [])
+
+
+def _index_file(
+    root: Path,
+    path: Path,
+    mode: str,
+    project_id: str,
+    store: SQLiteGraphStore,
+    vectors: QdrantLocalStore,
+) -> tuple[bool, bool, list[str]]:
+    rel = path.relative_to(root).as_posix()
+    file_hash = sha256_file(path)
+    if mode == "changed" and store.file_hash(rel) == file_hash:
+        return False, True, []
+
+    store.clear_generated_file_memory(rel)
+    parser, language, parser_name = _parser_for(path)
+    route_info = next_route_info(path, rel)
+    file_props = file_properties(path, rel, route_info)
+    file_id = store.upsert_node(
+        kind="File",
+        name=path.name,
+        fqn=rel,
+        path=rel,
+        language=language,
+        hash=file_hash,
+        properties=file_props,
+    )
+    store.upsert_edge(project_id, file_id, "CONTAINS", evidence=rel)
+    route_id = _index_route_node(store, file_id, rel, language, route_info)
+
+    if parser is None:
+        _index_text_file(path, rel, file_id, file_hash, store, vectors)
+        return True, False, []
+
+    result = parser.parse(root, path)
+    warnings = _index_parse_result(
+        path,
+        rel,
+        file_id,
+        file_hash,
+        language or "text",
+        parser_name,
+        result,
+        store,
+        vectors,
+        route_id=route_id,
+        route_info=route_info,
+        component_boundary=str(file_props.get("component_boundary")) if file_props.get("component_boundary") else None,
+    )
+    return True, False, warnings
+
+
+def _index_route_node(
+    store: SQLiteGraphStore,
+    file_id: str,
+    rel: str,
+    language: str | None,
+    route_info: dict[str, object] | None,
+) -> str | None:
+    if not route_info:
+        return None
+    route_id = store.upsert_node(
+        kind="Route",
+        name=route_info["route"],
+        fqn=f"next:{route_info['route_kind']}:{route_info['route']}",
+        path=rel,
+        language=language,
+        layer="frontend",
+        properties=route_info,
+    )
+    store.upsert_edge(file_id, route_id, "DEFINES", confidence=0.9, evidence=str(route_info["route"]))
+    return route_id
+
+
 def index_project(root: Path, mode: str = "changed") -> str:
     cfg = load_config(root)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
@@ -369,68 +472,20 @@ def index_project(root: Path, mode: str = "changed") -> str:
     project_id = store.upsert_node(kind="Project", name=root.name, fqn=root.name, path=".")
 
     for path in files:
-        rel = path.relative_to(root).as_posix()
-        file_hash = sha256_file(path)
-        if mode == "changed" and store.file_hash(rel) == file_hash:
+        did_index, did_skip, file_warnings = _index_file(root, path, mode, project_id, store, vectors)
+        if did_skip:
             skipped += 1
-            continue
-
-        store.clear_generated_file_memory(rel)
-        parser, language, parser_name = _parser_for(path)
-        file_id = store.upsert_node(
-            kind="File",
-            name=path.name,
-            fqn=rel,
-            path=rel,
-            language=language,
-            hash=file_hash,
-        )
-        store.upsert_edge(project_id, file_id, "CONTAINS", evidence=rel)
-        route_info = _next_route_info(path, rel)
-        if route_info:
-            route_id = store.upsert_node(
-                kind="Route",
-                name=route_info["route"],
-                fqn=f"next:{route_info['route_kind']}:{route_info['route']}",
-                path=rel,
-                language=language,
-                layer="frontend",
-                properties=route_info,
-            )
-            store.upsert_edge(file_id, route_id, "DEFINES", confidence=0.9, evidence=route_info["route"])
-
-        if parser is not None:
-            result = parser.parse(root, path)
-            warnings.extend(
-                _index_parse_result(path, rel, file_id, file_hash, language or "text", parser_name, result, store, vectors)
-            )
-        else:
-            content = path.read_text(encoding="utf-8", errors="replace")
-            line_count = max(1, len(content.splitlines()))
-            chunk_id = store.upsert_chunk(rel, rel, 1, line_count, content)
-            store.upsert_edge(chunk_id, file_id, "DESCRIBES", evidence=rel)
-            vectors.upsert_chunk(
-                chunk_id,
-                content,
-                {
-                    "chunk_id": chunk_id,
-                    "node_id": chunk_id,
-                    "file_path": rel,
-                    "symbol_id": None,
-                    "symbol_fqn": None,
-                    "start_line": 1,
-                    "end_line": line_count,
-                    "kind": "file",
-                    "hash": file_hash,
-                },
-            )
-            store.update_file_state(rel, file_hash, "text", [])
-        indexed += 1
+        if did_index:
+            indexed += 1
+        warnings.extend(file_warnings)
 
     summary = [f"indexed={indexed}", f"skipped={skipped}", f"removed={removed}", f"mode={mode}"]
     bound = _bind_cross_file_symbols(store)
     if bound:
         summary.append(f"bindings={bound}")
+    route_bound = bind_next_route_components(store)
+    if route_bound:
+        summary.append(f"route_bindings={route_bound}")
     if warnings:
         summary.append("warnings:")
         summary.extend(f"- {warning}" for warning in warnings[:20])

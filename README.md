@@ -306,6 +306,7 @@ MCP удобен для коротких structured-ответов агенту.
 - Python parser извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings.
 - JS/TS parser извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references.
 - JS/TS parser понимает `tsconfig` aliases, workspace/package aliases и Next.js app routes.
+- Next.js graph добавляет route-to-component edges, `use client`/server boundary и HTTP methods для `route.ts/js`.
 - Для JS/TS используется настраиваемый backend. По умолчанию `auto`: TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе встроенный lexical parser. `tree_sitter` и `lsp` зарезервированы как optional backends без обязательных зависимостей.
 - Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale поверх того же `pmem` runtime.
 - `tasks check` показывает открытые handoff/user tasks из `.agents/tasks/`, чтобы агент не пропускал задачи от других чатов.
@@ -376,6 +377,7 @@ Linear bridge выключен по умолчанию и не требует Li
 
 Кратко:
 
+- `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary и API route methods.
 - `0.14.0`: Real File Watcher; локальный polling watcher по hash с явным `watch --serve`.
 - `0.13.0`: Linear Sync; локальный bridge для экспорта/импорта задач Linear без обязательных зависимостей.
 - `0.12.0`: Bidirectional Human Sync; двусторонняя синхронизация Human-слоя с conflict detection.

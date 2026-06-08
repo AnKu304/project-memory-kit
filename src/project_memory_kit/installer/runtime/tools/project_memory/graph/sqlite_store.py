@@ -138,7 +138,7 @@ class SQLiteGraphStore:
     def clear_generated_file_memory(self, path: str) -> None:
         with self.connect() as conn:
             conn.execute("DELETE FROM chunks_fts WHERE path = ?", (path,))
-            conn.execute("DELETE FROM nodes WHERE kind IN ('Symbol', 'Chunk') AND path = ?", (path,))
+            conn.execute("DELETE FROM nodes WHERE kind IN ('Symbol', 'Chunk', 'Route') AND path = ?", (path,))
             conn.execute("DELETE FROM file_index_state WHERE path = ?", (path,))
 
     def clear_removed_file_memory(self, path: str) -> None:

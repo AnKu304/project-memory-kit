@@ -306,6 +306,7 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - The Python parser extracts modules, classes, functions, methods, imports, calls, inheritance, and docstrings.
 - The JS/TS parser extracts modules, classes, functions, methods, imports, exports, require, dynamic imports, calls, and JSX component references.
 - The JS/TS parser understands `tsconfig` aliases, workspace/package aliases, and Next.js app routes.
+- The Next.js graph adds route-to-component edges, `use client`/server boundary metadata, and HTTP methods for `route.ts/js`.
 - JS/TS uses a configurable backend. The default is `auto`: TypeScript compiler API when `node` and `typescript` are available in the project, otherwise the built-in lexical parser. `tree_sitter` and `lsp` are reserved optional backends without mandatory dependencies.
 - A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale tools over the same `pmem` runtime.
 - `tasks check` shows open handoff/user tasks from `.agents/tasks/`, so agents do not miss work left by another chat.
@@ -376,6 +377,7 @@ Run:
 
 Short version:
 
+- `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary, and API route methods.
 - `0.14.0`: Real File Watcher; local hash-based polling watcher with explicit `watch --serve`.
 - `0.13.0`: Linear Sync; local export/import bridge for Linear tasks without mandatory dependencies.
 - `0.12.0`: Bidirectional Human Sync; two-way Human layer sync with conflict detection.

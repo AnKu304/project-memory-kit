@@ -73,6 +73,37 @@ def _default_test_commands(root: Path, changed: list[str]) -> list[tuple[str, st
     return [(str(command), "configured default command") for command in commands]
 
 
+def _route_impacts(store: SQLiteGraphStore, paths: set[str]) -> list[dict[str, Any]]:
+    if not paths:
+        return []
+    placeholders = ",".join("?" for _ in paths)
+    rows = store.query(
+        f"""
+        SELECT name, fqn, path, properties_json
+        FROM nodes
+        WHERE kind = 'Route' AND path IN ({placeholders})
+        ORDER BY name, path
+        """,
+        tuple(sorted(paths)),
+    )
+    impacts: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            props = json.loads(row["properties_json"] or "{}")
+        except json.JSONDecodeError:
+            props = {}
+        impacts.append(
+            {
+                "route": row["name"],
+                "path": row["path"],
+                "kind": props.get("route_kind") or row["fqn"],
+                "boundary": props.get("component_boundary"),
+                "methods": props.get("http_methods") or [],
+            }
+        )
+    return impacts
+
+
 def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
     ensure_fresh_index(root, "impact")
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
@@ -148,6 +179,7 @@ def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
         "changed_files": changed,
         "touched_symbols": touched_symbols,
         "affected_files": [{"path": path, "reason": reason} for path, reason in sorted(affected_files.items())],
+        "route_impacts": _route_impacts(store, set(affected_files) | set(changed)),
         "tests": [{"target": target, "reason": reason} for target, reason in sorted(tests.items())],
         "risk": _risk(len(changed), len(affected_files), len(tests)),
     }
@@ -179,6 +211,15 @@ def format_impact(report: dict[str, Any], fmt: str = "markdown") -> str:
         lines.extend(f"- `{item['path']}`: {item['reason']}" for item in report["affected_files"])
     else:
         lines.append("- No affected files found.")
+    lines.extend(["", "## JS/TS Route Impact"])
+    if report.get("route_impacts"):
+        for item in report["route_impacts"]:
+            methods = ",".join(item.get("methods") or [])
+            suffix = f" methods={methods}" if methods else ""
+            boundary = f" boundary={item['boundary']}" if item.get("boundary") else ""
+            lines.append(f"- `{item['route']}` {item['kind']} in `{item['path']}`{boundary}{suffix}")
+    else:
+        lines.append("- No changed or affected JS/TS routes found.")
     lines.extend(["", "## Tests"])
     if report["tests"]:
         lines.extend(f"- `{item['target']}`: {item['reason']}" for item in report["tests"])
