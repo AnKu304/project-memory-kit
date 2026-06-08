@@ -189,6 +189,8 @@ Installed runtime:
 ./pmem audit
 ./pmem audit --secrets
 ./pmem optimize
+./pmem report
+./pmem report --format json
 ./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem tasks check
 ./pmem tasks list
@@ -222,6 +224,7 @@ Installed runtime:
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
 ./pmem search --query "design principles" --layer human
+./pmem report
 ./pmem watch
 ./pmem watch --once
 ./pmem watch --interval 5 --max-runs 1
@@ -296,7 +299,7 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - Hybrid search combines SQLite FTS5 `bm25()`, vector score, term coverage, path matches, graph proximity, confidence, layer, and recency.
 - `./pmem search --debug` shows ranking components.
 - `search`, `context`, `impact`, and `tests` automatically run a local `changed` index when the database is empty or stale.
-- `status`, `stale`, `audit`, `eval`, `tests --explain`, and `watch` help check memory quality locally.
+- `status`, `stale`, `report`, `audit`, `eval`, `tests --explain`, and `watch` help check memory quality locally.
 - `audit --secrets` scans project files for possible secrets without printing the matched values.
 - `optimize` runs local SQLite maintenance.
 - Full records are opened only when needed.
@@ -377,6 +380,7 @@ Run:
 
 Short version:
 
+- `0.16.0`: Memory Quality Dashboard; `pmem report` for local Markdown/JSON memory health reports.
 - `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary, and API route methods.
 - `0.14.0`: Real File Watcher; local hash-based polling watcher with explicit `watch --serve`.
 - `0.13.0`: Linear Sync; local export/import bridge for Linear tasks without mandatory dependencies.

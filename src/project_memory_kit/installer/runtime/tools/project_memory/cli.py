@@ -37,6 +37,7 @@ from tools.project_memory.services.knowledge import (
 )
 from tools.project_memory.services.migrations import apply_migrations
 from tools.project_memory.services.maintenance import format_optimization, optimize_project
+from tools.project_memory.services.memory_report import build_memory_report, format_memory_report
 from tools.project_memory.services.mcp_config import build_mcp_config, format_mcp_config, write_mcp_config
 from tools.project_memory.mcp import serve_stdio
 from tools.project_memory.parser_sections import (
@@ -156,6 +157,11 @@ def command_optimize(args: argparse.Namespace) -> int:
 
 def command_stale(args: argparse.Namespace) -> int:
     print(format_stale(root(), args.format), end="")
+    return 0
+
+
+def command_report(args: argparse.Namespace) -> int:
+    print(format_memory_report(build_memory_report(root()), args.format), end="")
     return 0
 
 
@@ -515,6 +521,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("stale")
     p.add_argument("--format", choices=["markdown", "json"], default="markdown")
     p.set_defaults(func=command_stale)
+
+    p = sub.add_parser("report")
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.set_defaults(func=command_report)
 
     p = sub.add_parser("watch")
     p.add_argument("--once", action="store_true")

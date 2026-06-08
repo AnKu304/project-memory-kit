@@ -110,6 +110,43 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(watch.returncode, 0, watch.stderr)
             self.assertIn("watch check", watch.stdout)
 
+    def test_report_summarizes_memory_quality_as_markdown_and_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root, agent="multiagent")
+            (root / "app.py").write_text("def report_token():\n    return True\n", encoding="utf-8")
+            task = root / ".agents/tasks/review-report.md"
+            task.write_text(
+                "# Review Report\n\nType: handoff\nStatus: active\nRole: reviewer\n",
+                encoding="utf-8",
+            )
+
+            markdown = subprocess.run(
+                [str(root / "pmem"), "report"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(markdown.returncode, 0, markdown.stderr)
+            self.assertIn("Memory Quality Report", markdown.stdout)
+            self.assertIn("active tasks: 1", markdown.stdout)
+            self.assertIn("index is stale or incomplete", markdown.stdout)
+
+            as_json = subprocess.run(
+                [str(root / "pmem"), "report", "--format", "json"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(as_json.returncode, 0, as_json.stderr)
+            report = json.loads(as_json.stdout)
+            self.assertFalse(report["ok"])
+            self.assertEqual(report["tasks"]["active"], 1)
+            self.assertIn("index", report)
+            self.assertIn("evals", report)
+
     def test_watch_serve_indexes_hash_changed_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -34,6 +34,7 @@ Useful checks:
 ./pmem audit
 ./pmem audit --secrets
 ./pmem optimize
+./pmem report
 ./pmem tasks check
 ./pmem tasks linear status
 ./pmem human status

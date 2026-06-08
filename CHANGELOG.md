@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.16.0
+
+Added:
+
+- Memory Quality Dashboard.
+- Панель качества памяти.
+- `./pmem report` with Markdown output.
+- `./pmem report --format json`.
+
+Updated:
+
+- Reports summarize index freshness, graph counts, knowledge/rationale conflicts, active tasks, eval hints, and module state.
+
+Removed:
+
+- Nothing.
+
+Better than 0.15.0:
+
+- Agents can check memory health with one compact local command before work.
+- The report avoids loading large files or logs into model context.
+
 ## 0.15.0
 
 Added:
