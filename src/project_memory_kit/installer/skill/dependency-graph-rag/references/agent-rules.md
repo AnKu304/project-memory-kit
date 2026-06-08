@@ -2,6 +2,8 @@
 
 The local project-memory workflow is mandatory for meaningful code and knowledge work.
 
+Keyword search is ranked with SQLite FTS5 BM25. `search`, `context`, `impact`, and `tests` auto-refresh stale local indexes, but explicit `./pmem index --mode changed` remains part of the verification workflow.
+
 Use `./pmem knowledge context --task "<task>"` for research, architecture, SEO, UX, design, product, content, positioning, or principle-heavy tasks.
 
 Use `./pmem rationale context --task "<task>"` for "why", rejected approaches, architecture decisions, tool choices, repeated dead ends, experiments, and invariants.

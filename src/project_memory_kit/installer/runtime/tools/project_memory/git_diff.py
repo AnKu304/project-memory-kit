@@ -22,6 +22,15 @@ def changed_files(root: Path, base: str = "HEAD") -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def untracked_files(root: Path) -> list[str]:
+    if not git_available(root):
+        return []
+    result = run_git(root, ["ls-files", "--others", "--exclude-standard"])
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def diff_ranges(root: Path, base: str = "HEAD") -> dict[str, list[tuple[int, int]]]:
     if not git_available(root):
         return {}
@@ -45,4 +54,3 @@ def diff_ranges(root: Path, base: str = "HEAD") -> dict[str, list[tuple[int, int
             end = max(start, start + count - 1)
             ranges[current].append((start, end))
     return ranges
-

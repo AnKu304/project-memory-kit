@@ -18,8 +18,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cache_dir": ".project-memory/cache",
         "knowledge_dir": ".project-memory/knowledge",
         "rationale_dir": ".project-memory/rationale",
+        "human_dir": ".project-memory/human",
+        "models_dir": ".project-memory/models",
     },
     "indexing": {
+        "auto_index": {
+            "enabled": True,
+            "mode": "changed",
+            "commands": ["search", "context", "impact", "tests"],
+        },
         "include_extensions": [
             ".py",
             ".js",
@@ -61,6 +68,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "memory": {"max_context_chunks": 8, "vector_size": 64},
     "knowledge": {"max_context_items": 5},
     "rationale": {"max_context_items": 5},
+    "modules": {
+        "human": {
+            "enabled": False,
+        },
+    },
     "vector": {
         "backend": "auto",
         "collection": "project_memory_chunks",

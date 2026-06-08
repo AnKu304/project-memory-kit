@@ -7,6 +7,7 @@ from typing import Any
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.git_diff import changed_files, diff_ranges
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
+from tools.project_memory.services.auto_index import ensure_fresh_index
 
 JS_TS_SUFFIXES = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"}
 
@@ -73,6 +74,7 @@ def _default_test_commands(root: Path, changed: list[str]) -> list[tuple[str, st
 
 
 def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
+    ensure_fresh_index(root, "impact")
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
     changed = changed_files(root, base)

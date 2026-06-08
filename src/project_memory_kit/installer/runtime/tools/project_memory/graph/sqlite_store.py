@@ -141,6 +141,17 @@ class SQLiteGraphStore:
             conn.execute("DELETE FROM nodes WHERE kind IN ('Symbol', 'Chunk') AND path = ?", (path,))
             conn.execute("DELETE FROM file_index_state WHERE path = ?", (path,))
 
+    def clear_removed_file_memory(self, path: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM chunks_fts WHERE path = ?", (path,))
+            conn.execute("DELETE FROM nodes WHERE path = ?", (path,))
+            conn.execute("DELETE FROM file_index_state WHERE path = ?", (path,))
+
+    def indexed_file_paths(self) -> set[str]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT path FROM file_index_state").fetchall()
+        return {str(row["path"]) for row in rows}
+
     def update_file_state(self, path: str, file_hash: str, parser: str, warnings: list[str]) -> None:
         with self.connect() as conn:
             conn.execute(

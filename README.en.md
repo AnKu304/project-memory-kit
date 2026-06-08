@@ -116,6 +116,9 @@ Installed runtime:
 ./pmem version
 ./pmem doctor
 ./pmem migrate
+./pmem modules list
+./pmem modules set human --enabled true
+./pmem modules set human --enabled false
 ./pmem index --mode full
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
@@ -180,9 +183,10 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - Knowledge search uses only `current` records by default. When a principle changes, `knowledge update` keeps one current record instead of creating a competing copy.
 - The rationale layer stores verified causes: decisions, rejected alternatives, experiments, invariants, and evidence.
 - Full rationale records live in `.project-memory/rationale/**/*.md`; context receives only short snippets, ids, score/reason, and paths to full records.
-- Search is ranked locally from FTS/vector candidates, score, source, and matched terms. Full records are opened only when needed.
+- SQLite FTS5 `bm25()` ranks keyword results. Vector search is added on top when Qdrant/FastEmbed are available.
+- `search`, `context`, `impact`, and `tests` automatically run a local `changed` index when the database is empty or stale.
+- Full records are opened only when needed.
 - Edges have `confidence`; more exact bindings receive higher scores.
-- SQLite FTS provides baseline chunk search.
 - Qdrant local + FastEmbed provide semantic search when available.
 - If Qdrant/FastEmbed are not available, deterministic fallback keeps install and indexing usable.
 - The Python parser extracts modules, classes, functions, methods, imports, calls, inheritance, and docstrings.
@@ -190,6 +194,24 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - JS/TS uses the TypeScript compiler API when `node` and `typescript` are available in the project; otherwise it uses the built-in lexical parser.
 - A local MCP server exposes doctor/index/context/impact/search/tests/knowledge/rationale tools over the same `pmem` runtime.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
+
+## Optional Modules
+
+Modules are configured in `.project-memory/config.yaml`.
+
+```yaml
+modules:
+  human:
+    enabled: false
+```
+
+`human` is disabled by default. Enabling it creates `.project-memory/human/`; disabling it does not delete data:
+
+```bash
+./pmem modules list
+./pmem modules set human --enabled true
+./pmem modules set human --enabled false
+```
 
 ## Knowledge Layer
 

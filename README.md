@@ -116,6 +116,9 @@ pmem version
 ./pmem version
 ./pmem doctor
 ./pmem migrate
+./pmem modules list
+./pmem modules set human --enabled true
+./pmem modules set human --enabled false
 ./pmem index --mode full
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
@@ -180,9 +183,10 @@ MCP удобен для коротких structured-ответов агенту.
 - В поиске по knowledge по умолчанию используются только `current` записи. При изменении принципа выполняется `knowledge update`, чтобы не создавать вторую конкурирующую запись.
 - Rationale layer хранит проверяемые причины: решения, отклоненные варианты, эксперименты, инварианты и evidence.
 - Полные версии rationale-записей лежат в `.project-memory/rationale/**/*.md`; в контекст попадают только короткие выдержки, id, score/reason и путь к полной версии.
-- Поиск ранжируется локально по FTS/vector candidates, score, source и matched terms. Полные записи открываются только при необходимости.
+- SQLite FTS5 `bm25()` ранжирует keyword results. Vector search добавляется сверху, если Qdrant/FastEmbed доступны.
+- `search`, `context`, `impact` и `tests` автоматически запускают локальный `changed` index, если база пустая или stale.
+- Полные записи открываются только при необходимости.
 - У связей есть `confidence`; более точные bindings получают более высокий score.
-- SQLite FTS дает базовый поиск по chunks.
 - Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
 - Если Qdrant/FastEmbed недоступны, включается deterministic fallback, чтобы установка и индексирование не ломались.
 - Python parser извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings.
@@ -190,6 +194,24 @@ MCP удобен для коротких structured-ответов агенту.
 - Для JS/TS используется TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе работает встроенный lexical parser.
 - Локальный MCP server предоставляет агентам tools для doctor/index/context/impact/search/tests/knowledge/rationale поверх того же `pmem` runtime.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
+
+## Optional Modules
+
+Модули включаются в `.project-memory/config.yaml`.
+
+```yaml
+modules:
+  human:
+    enabled: false
+```
+
+`human` выключен по умолчанию. Включение создает `.project-memory/human/`; выключение не удаляет данные:
+
+```bash
+./pmem modules list
+./pmem modules set human --enabled true
+./pmem modules set human --enabled false
+```
 
 ## Knowledge Layer
 

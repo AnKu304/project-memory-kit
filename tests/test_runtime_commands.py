@@ -11,6 +11,119 @@ from project_memory_kit.installer.install_project import install_project
 
 
 class RuntimeCommandsTest(unittest.TestCase):
+    def test_search_auto_indexes_and_uses_bm25(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "def alpha_payment_validator(amount):\n"
+                "    return amount >= 0\n",
+                encoding="utf-8",
+            )
+
+            search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "alpha payment validator", "--limit", "5"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertIn("app.py", search.stdout)
+            self.assertIn("[bm25", search.stdout)
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute("SELECT hash FROM file_index_state WHERE path = 'app.py'").fetchone()
+            finally:
+                conn.close()
+            self.assertIsNotNone(row)
+
+    def test_auto_index_removes_deleted_file_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            path = root / "app.py"
+            path.write_text("def deleted_token_handler():\n    return True\n", encoding="utf-8")
+            subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            path.unlink()
+
+            search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "deleted token handler", "--limit", "5"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertNotIn("app.py", search.stdout)
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute("SELECT hash FROM file_index_state WHERE path = 'app.py'").fetchone()
+                chunk_count = conn.execute("SELECT count(*) FROM chunks_fts WHERE path = 'app.py'").fetchone()[0]
+            finally:
+                conn.close()
+            self.assertIsNone(row)
+            self.assertEqual(chunk_count, 0)
+
+    def test_modules_command_enables_optional_human_layer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+
+            before = subprocess.run(
+                [str(root / "pmem"), "modules", "list"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(before.returncode, 0, before.stderr)
+            self.assertIn("human: disabled", before.stdout)
+            self.assertFalse((root / ".project-memory/human").exists())
+
+            enable = subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(enable.returncode, 0, enable.stderr)
+            self.assertIn("human: enabled", enable.stdout)
+            self.assertTrue((root / ".project-memory/human").exists())
+            self.assertIn("enabled: true", (root / ".project-memory/config.yaml").read_text(encoding="utf-8"))
+
+            disable = subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "false"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(disable.returncode, 0, disable.stderr)
+            self.assertIn("human: disabled", disable.stdout)
+            self.assertTrue((root / ".project-memory/human").exists())
+
     def test_context_and_search_work_after_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -337,7 +450,7 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertIn("Storage Decision", search.stdout)
-            self.assertIn("0.", search.stdout)
+            self.assertIn("[bm25", search.stdout)
 
             source.write_text(
                 "# Storage Decision\n\nUse canonical-db-token as the source of truth.\n",

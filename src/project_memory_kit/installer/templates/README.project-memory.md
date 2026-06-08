@@ -20,6 +20,18 @@ Vector state is controlled by `config.yaml`:
 - `vector.backend: qdrant` requires Qdrant/FastEmbed and fails loudly if unavailable.
 - `vector.backend: fallback` keeps deterministic bootstrap records only.
 
+Keyword search uses SQLite FTS5 `bm25()`. `search`, `context`, `impact`, and `tests` run a local `changed` index automatically when indexed files are missing or stale.
+
+Optional modules are controlled in `config.yaml`:
+
+```yaml
+modules:
+  human:
+    enabled: false
+```
+
+`human` is disabled by default. Enabling it creates `human/`; disabling it keeps existing files.
+
 Commit:
 
 - `config.yaml`
@@ -27,6 +39,7 @@ Commit:
 - this README
 - `knowledge/**/*.md`
 - `rationale/**/*.md`
+- `human/**/*.md` when the module is enabled
 
 Do not commit:
 

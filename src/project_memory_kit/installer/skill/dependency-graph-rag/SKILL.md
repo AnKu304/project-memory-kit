@@ -9,6 +9,8 @@ Use this repository's local project memory before and after meaningful changes.
 
 If the local MCP server is configured, use `pmem_*` MCP tools for bounded context, search, impact, tests, knowledge, and rationale. The shell commands below remain the fallback and final verification baseline.
 
+Keyword search uses local SQLite FTS5 BM25 ranking. `search`, `context`, `impact`, and `tests` auto-refresh stale local indexes, but explicit `index` commands remain the verification baseline for meaningful edits.
+
 ## Trigger
 
 Use this skill for:

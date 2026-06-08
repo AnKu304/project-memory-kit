@@ -21,6 +21,7 @@ from tools.project_memory.services.knowledge import (
 )
 from tools.project_memory.services.migrations import apply_migrations
 from tools.project_memory.mcp import serve_stdio
+from tools.project_memory.services.modules import format_module_states, set_module_enabled
 from tools.project_memory.services.rationale import (
     add_rationale,
     build_rationale_context,
@@ -238,6 +239,28 @@ def command_migrate(_: argparse.Namespace) -> int:
     return 0
 
 
+def command_modules(args: argparse.Namespace) -> int:
+    try:
+        if args.modules_command == "list":
+            print(format_module_states(root()))
+            return 0
+        if args.modules_command == "set":
+            enabled = str(args.enabled).strip().lower() in {"1", "true", "yes", "on", "enabled"}
+            disabled = str(args.enabled).strip().lower() in {"0", "false", "no", "off", "disabled"}
+            if not enabled and not disabled:
+                print("--enabled must be true or false", file=sys.stderr)
+                return 2
+            state = set_module_enabled(root(), args.name, enabled)
+            status = "enabled" if state.enabled else "disabled"
+            print(f"{state.name}: {status}")
+            return 0
+    except (RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print("missing modules command", file=sys.stderr)
+    return 2
+
+
 def command_mcp(args: argparse.Namespace) -> int:
     mcp_root = Path(args.root)
     if not mcp_root.is_absolute():
@@ -408,6 +431,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("migrate")
     p.set_defaults(func=command_migrate)
+
+    p = sub.add_parser("modules")
+    modules_sub = p.add_subparsers(dest="modules_command", required=True)
+
+    m = modules_sub.add_parser("list")
+    m.set_defaults(func=command_modules)
+
+    m = modules_sub.add_parser("set")
+    m.add_argument("name")
+    m.add_argument("--enabled", required=True)
+    m.set_defaults(func=command_modules)
 
     p = sub.add_parser("mcp")
     p.add_argument("--root", default=".")

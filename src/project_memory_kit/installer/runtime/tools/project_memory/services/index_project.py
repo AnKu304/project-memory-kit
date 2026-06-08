@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from tools.project_memory.config import config_path, load_config
-from tools.project_memory.git_diff import changed_files
+from tools.project_memory.git_diff import changed_files, untracked_files
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
 from tools.project_memory.ignore import should_index
@@ -19,12 +19,31 @@ PYTHON_PARSER = PythonAstParser()
 JS_TS_PARSER = JsTsParser()
 
 
-def _iter_files(root: Path, mode: str) -> list[Path]:
+def _iter_files(root: Path, mode: str, store: SQLiteGraphStore | None = None) -> list[Path]:
+    all_files = [path for path in root.rglob("*") if should_index(root, path)]
     if mode == "changed":
-        changed = changed_files(root)
+        changed = list(dict.fromkeys([*changed_files(root), *untracked_files(root)]))
         if changed:
-            return [root / item for item in changed if (root / item).exists()]
-    return [path for path in root.rglob("*") if should_index(root, path)]
+            changed_set = set(changed)
+            candidates = [path for path in all_files if path.relative_to(root).as_posix() in changed_set]
+            if store is not None:
+                known = {path.relative_to(root).as_posix() for path in candidates}
+                candidates.extend(
+                    path
+                    for path in all_files
+                    if path.relative_to(root).as_posix() not in known
+                    and store.file_hash(path.relative_to(root).as_posix()) is None
+                )
+            return candidates
+    return all_files
+
+
+def _cleanup_removed_files(root: Path, store: SQLiteGraphStore) -> int:
+    current_paths = {path.relative_to(root).as_posix() for path in root.rglob("*") if should_index(root, path)}
+    removed_paths = store.indexed_file_paths() - current_paths
+    for rel in sorted(removed_paths):
+        store.clear_removed_file_memory(rel)
+    return len(removed_paths)
 
 
 def _lines_for(path: Path, start_line: int, end_line: int) -> str:
@@ -315,10 +334,11 @@ def index_project(root: Path, mode: str = "changed") -> str:
         model_name=vector_cfg.get("embedding_model"),
     )
 
-    files = [path for path in _iter_files(root, mode) if should_index(root, path)]
+    files = [path for path in _iter_files(root, mode, store) if should_index(root, path)]
     indexed = 0
     skipped = 0
     warnings: list[str] = []
+    removed = _cleanup_removed_files(root, store)
 
     project_id = store.upsert_node(kind="Project", name=root.name, fqn=root.name, path=".")
 
@@ -369,7 +389,7 @@ def index_project(root: Path, mode: str = "changed") -> str:
             store.update_file_state(rel, file_hash, "text", [])
         indexed += 1
 
-    summary = [f"indexed={indexed}", f"skipped={skipped}", f"mode={mode}"]
+    summary = [f"indexed={indexed}", f"skipped={skipped}", f"removed={removed}", f"mode={mode}"]
     bound = _bind_cross_file_symbols(store)
     if bound:
         summary.append(f"bindings={bound}")

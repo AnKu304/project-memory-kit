@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
+from tools.project_memory.services.auto_index import ensure_fresh_index
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
 
@@ -51,20 +52,36 @@ def _annotate_rows(query: str, rows: list[dict[str, object]], source: str) -> li
     return annotated
 
 
+def _annotate_bm25_rows(query: str, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    annotated: list[dict[str, object]] = []
+    total = max(len(rows), 1)
+    for index, row in enumerate(rows):
+        local_score, local_reason = _local_score(query, row, source="bm25")
+        order_score = max(0.05, 1.0 - (index / total) * 0.35)
+        row["score"] = max(local_score, order_score)
+        row["source"] = "bm25"
+        row["reason"] = f"bm25 rank {float(row.get('bm25_rank') or 0.0):.6f}; {local_reason}"
+        annotated.append(row)
+    return annotated
+
+
 def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | None = None) -> list[dict[str, object]]:
     safe_query = _fts_query(query)
     layer_join = "JOIN nodes n ON n.id = chunks_fts.chunk_id" if layer else ""
     layer_where = "AND n.layer = ?" if layer else ""
     args: tuple[object, ...] = (safe_query, layer, limit) if layer else (safe_query, limit)
+    used_bm25 = True
     try:
         rows = store.query(
             f"""
             SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
-                   snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet
+                   snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet,
+                   bm25(chunks_fts) AS bm25_rank
             FROM chunks_fts
             {layer_join}
             WHERE chunks_fts MATCH ?
             {layer_where}
+            ORDER BY bm25_rank ASC
             LIMIT ?
             """,
             args,
@@ -76,16 +93,19 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
                 rows = store.query(
                     f"""
                     SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
-                           snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet
+                           snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet,
+                           bm25(chunks_fts) AS bm25_rank
                     FROM chunks_fts
                     {layer_join}
                     WHERE chunks_fts MATCH ?
                     {layer_where}
+                    ORDER BY bm25_rank ASC
                     LIMIT ?
                     """,
                     args,
                 )
     except sqlite3.Error:
+        used_bm25 = False
         args = (f"%{query[:80]}%", layer, limit) if layer else (f"%{query[:80]}%", limit)
         rows = store.query(
             f"""
@@ -99,7 +119,10 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
             """,
             args,
         )
-    return _annotate_rows(query, [dict(row) for row in rows], "fts")
+    dict_rows = [dict(row) for row in rows]
+    if used_bm25:
+        return _annotate_bm25_rows(query, dict_rows)
+    return _annotate_rows(query, dict_rows, "like")
 
 
 def _rows_by_chunk_id(store: SQLiteGraphStore, chunk_ids: list[str], layer: str | None = None) -> dict[str, dict[str, object]]:
@@ -158,6 +181,7 @@ def _vector_search(
 
 
 def search(root: Path, query: str, limit: int = 10, layer: str | None = None) -> list[dict[str, object]]:
+    ensure_fresh_index(root, "search")
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
     results: list[dict[str, object]] = []

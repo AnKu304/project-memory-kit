@@ -37,6 +37,10 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertIn("backend: auto", config)
             self.assertIn("knowledge_dir: .project-memory/knowledge", config)
             self.assertIn("rationale_dir: .project-memory/rationale", config)
+            self.assertIn("human_dir: .project-memory/human", config)
+            self.assertIn("human:", config)
+            self.assertIn("enabled: false", config)
+            self.assertFalse((root / ".project-memory/human").exists())
             agents = (root / "AGENTS.md").read_text(encoding="utf-8")
             self.assertIn("This file is the project instruction hub", agents)
             self.assertIn("## Project Rules", agents)
@@ -52,6 +56,7 @@ class InstallerNewRepoTest(unittest.TestCase):
             self.assertIn("current rationale entries:", doctor.stdout)
             self.assertIn("possible knowledge conflicts:", doctor.stdout)
             self.assertIn("possible rationale conflicts:", doctor.stdout)
+            self.assertIn("module human: disabled", doctor.stdout)
             self.assertIn("vector backend:", doctor.stdout)
             self.assertIn("sqlite: ok", doctor.stdout)
 
