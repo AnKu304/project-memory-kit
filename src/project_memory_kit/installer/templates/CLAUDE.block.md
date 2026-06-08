@@ -1,0 +1,53 @@
+## Local Project Memory Protocol
+
+This repository uses local Dependency Graph RAG project memory.
+
+Claude-specific project memory rules are imported here:
+
+@.claude/rules/project-memory.md
+
+The memory system is installed in:
+
+```text
+.project-memory/
+tools/project_memory/
+.claude/skills/dependency-graph-rag/
+```
+
+If the local MCP server is configured, use the equivalent `pmem_*` tools for bounded context, search, impact, tests, knowledge, and rationale. CLI commands remain the fallback and verification baseline.
+
+Before meaningful edits, run:
+
+```bash
+./pmem doctor
+./pmem status
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem context --task "<current task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
+```
+
+Read `.project-memory/reports/CHANGE_CONTEXT.md` before editing. Keep context bounded: inspect large files, logs, and reports locally, then bring only relevant findings, short excerpts, ids, and paths into the working context.
+
+For research, architecture, SEO, design, UX, product, content, or principle-heavy work, also run:
+
+```bash
+./pmem knowledge context --task "<current task>" --out .project-memory/reports/KNOWLEDGE_CONTEXT.md
+```
+
+For "why", rejected approaches, prior failures, storage/tool choices, and repeated dead ends, also run:
+
+```bash
+./pmem rationale context --task "<current task>" --out .project-memory/reports/RATIONALE_CONTEXT.md
+```
+
+After editing, run:
+
+```bash
+./pmem index --mode changed
+./pmem impact --base HEAD --format markdown
+./pmem tests --base HEAD --explain
+```
+
+Use `./pmem search --query "<task terms>" --debug` when retrieved memory looks incomplete. Use `./pmem audit --secrets` before commits that touched config, auth, env handling, integrations, or credentials.
+
+Never index, print, or store secrets.

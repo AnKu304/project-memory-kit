@@ -88,6 +88,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "memory": {"max_context_chunks": 8, "vector_size": 64},
     "knowledge": {"max_context_items": 5},
     "rationale": {"max_context_items": 5},
+    "audit": {
+        "secrets": {
+            "max_file_bytes": 1_000_000,
+            "max_findings": 100,
+        },
+    },
     "modules": {
         "human": {
             "enabled": False,

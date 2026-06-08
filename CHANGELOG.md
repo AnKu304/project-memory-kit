@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.8.0
+
+Added:
+
+- npm/npx distribution with `@anku/project-memory-kit` package metadata and a `pmem` Node wrapper.
+- Install profiles: `Codex` by default, optional `Claude`, and optional `Multi-agent`.
+- Claude Code project structure: `CLAUDE.md`, `.claude/rules/project-memory.md`, `.claude/skills/dependency-graph-rag/`, and `.claude/commands/`.
+- Multi-agent role structure: `.agents/roles/` and `.claude/agents/`.
+- `./pmem audit --secrets` for local possible-secret detection without printing matched secret values.
+- `./pmem optimize` for local SQLite maintenance.
+- `./pmem mcp-config` to print a ready MCP client config snippet.
+- GitHub Actions CI for unit tests, installer smoke checks, and npm wrapper smoke checks.
+- Code bloat guard tests for oversized Python functions and files.
+- Release notes under `docs/release-notes/`.
+
+Updated:
+
+- `pmem upgrade --agent auto` preserves the previous install profile when possible.
+- Installer metadata now records `agent_profile`.
+- Config schema is now `6` and includes audit secret-scan limits.
+- Documentation now covers npm/npx, install profile selection, Claude structure, Multi-agent structure, and release workflow.
+- Package version fields are synchronized across Python package metadata, runtime, and npm metadata.
+
+Removed:
+
+- Nothing.
+
+Better than 0.7.0:
+
+- JS/TS/Next/React projects can bootstrap through `npx` as well as `pipx`.
+- Claude Code users get a native project structure instead of Codex-only `AGENTS.md`.
+- Multi-agent projects can start from a shared universal structure instead of ad hoc folders.
+- Upgrade remains memory-safe while adding or preserving agent profiles.
+- Local checks now cover possible secrets, SQLite maintenance, and generated MCP config.
+
 ## 0.7.0
 
 Added:

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} / Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        node-version: ["20", "22"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Run unit tests
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:src/project_memory_kit/installer/runtime python -m unittest discover -s tests
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Source-tree installer smoke
+        run: |
+          tmp="$(mktemp -d)"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python -m project_memory_kit.cli init --target "$tmp"
+          "$tmp/pmem" version
+          "$tmp/pmem" status
+          rm -rf "$tmp"
+
+      - name: npm wrapper smoke
+        run: |
+          node npm/bin/pmem.js version
+          tmp="$(mktemp -d)"
+          node npm/bin/pmem.js init --target "$tmp" --agent multiagent
+          "$tmp/pmem" version
+          test -f "$tmp/AGENTS.md"
+          test -f "$tmp/CLAUDE.md"
+          test -f "$tmp/.claude/agents/pmem-coordinator.md"
+          rm -rf "$tmp"

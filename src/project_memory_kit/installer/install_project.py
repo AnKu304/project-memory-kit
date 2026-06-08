@@ -22,6 +22,9 @@ from project_memory_kit.installer.templates import read_template, runtime_root, 
 from project_memory_kit.version import CONFIG_SCHEMA_VERSION, GRAPH_SCHEMA_VERSION, __version__
 
 
+AGENT_PROFILES = {"codex", "claude", "multiagent"}
+
+
 @dataclass
 class ProjectInstallResult:
     report: InstallReport
@@ -95,6 +98,36 @@ def _run_runtime(root: Path, report: InstallReport, args: list[str]) -> None:
         report.commands.append(f"{command} failed: {stderr}")
 
 
+def _read_install_metadata(root: Path) -> dict[str, object]:
+    path = root / ".project-memory" / "install.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _normalize_agent_profile(root: Path, agent: str, upgrade: bool = False) -> str:
+    value = (agent or "codex").strip().lower()
+    if value in {"all", "universal", "universal-agents", "universal_agents"}:
+        value = "multiagent"
+    if value in {"auto", "preserve"}:
+        previous = _read_install_metadata(root)
+        value = str(previous.get("agent_profile") or previous.get("agent") or "codex").strip().lower()
+        if value in {"all", "universal", "universal-agents", "universal_agents"}:
+            value = "multiagent"
+    if value not in AGENT_PROFILES:
+        choices = ", ".join(["codex", "claude", "multiagent"])
+        raise ValueError(f"unsupported agent profile `{agent}`; choose one of: {choices}")
+    if upgrade and value == "codex":
+        previous = _read_install_metadata(root)
+        previous_profile = str(previous.get("agent_profile") or "").strip().lower()
+        if previous_profile in AGENT_PROFILES and previous_profile != "codex" and agent in {"", "auto", "preserve"}:
+            return previous_profile
+    return value
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -142,19 +175,46 @@ def _write_or_merge_config(config_dest: Path, upgrade: bool, report: InstallRepo
     report.add_path("updated", config_dest)
 
 
-def _write_install_metadata(root: Path, report: InstallReport, operation: str) -> None:
+def _managed_paths_for_profile(agent_profile: str) -> list[str]:
+    paths = [
+        ".project-memory/config.yaml",
+        ".project-memory/.gitignore",
+        ".project-memory/README.md",
+        ".project-memory/install.json",
+        "tools/project_memory/",
+        "pmem",
+        "pmem.ps1",
+        ".gitignore",
+    ]
+    if agent_profile in {"codex", "multiagent"}:
+        paths.extend(["AGENTS.md", ".agents/skills/dependency-graph-rag/"])
+    if agent_profile == "multiagent":
+        paths.extend([".agents/roles/"])
+    if agent_profile in {"claude", "multiagent"}:
+        paths.extend(
+            [
+                "CLAUDE.md",
+                ".claude/rules/project-memory.md",
+                ".claude/skills/dependency-graph-rag/",
+                ".claude/commands/pmem-context.md",
+                ".claude/commands/pmem-status.md",
+                ".claude/commands/pmem-audit.md",
+            ]
+        )
+    if agent_profile == "multiagent":
+        paths.extend([".claude/agents/"])
+    return paths
+
+
+def _write_install_metadata(root: Path, report: InstallReport, operation: str, agent_profile: str) -> None:
     path = root / ".project-memory" / "install.json"
-    previous: dict[str, object] = {}
-    if path.exists():
-        try:
-            previous = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            previous = {}
+    previous = _read_install_metadata(root)
     now = _utc_now()
     data = {
         "package": "project-memory-kit",
         "installed_version": __version__,
         "runtime_version": __version__,
+        "agent_profile": agent_profile,
         "config_schema_version": CONFIG_SCHEMA_VERSION,
         "graph_schema_version": GRAPH_SCHEMA_VERSION,
         "installed_at": previous.get("installed_at") or now,
@@ -162,17 +222,7 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str) -
         "previous_version": previous.get("runtime_version"),
         "last_operation": operation,
         "state_preserved": True,
-        "managed_paths": [
-            "AGENTS.md",
-            ".agents/skills/dependency-graph-rag/",
-            ".project-memory/config.yaml",
-            ".project-memory/.gitignore",
-            ".project-memory/README.md",
-            "tools/project_memory/",
-            "pmem",
-            "pmem.ps1",
-            ".gitignore",
-        ],
+        "managed_paths": _managed_paths_for_profile(agent_profile),
         "knowledge_paths": [
             ".project-memory/knowledge/",
         ],
@@ -231,6 +281,40 @@ def _setup_vector_runtime(root: Path, report: InstallReport) -> None:
         report.commands.append(f"vector runtime dependency install failed: {(result.stderr or result.stdout).strip()}")
 
 
+def _copy_project_memory_skill(root: Path, base_dir: Path, report: InstallReport) -> None:
+    copy_tree(skill_root(), base_dir / "skills" / "dependency-graph-rag", report)
+
+
+def _install_codex_profile(root: Path, report: InstallReport) -> None:
+    merge_agents_block(
+        root / "AGENTS.md",
+        read_template("AGENTS.block.md"),
+        report,
+        full_template=read_template("AGENTS.full.md"),
+    )
+    _copy_project_memory_skill(root, root / ".agents", report)
+
+
+def _install_claude_profile(root: Path, report: InstallReport, include_multiagent: bool = False) -> None:
+    merge_agents_block(
+        root / "CLAUDE.md",
+        read_template("CLAUDE.block.md"),
+        report,
+        full_template=read_template("CLAUDE.full.md"),
+    )
+    write_managed_file(template_path("claude-rules.project-memory.md"), root / ".claude" / "rules" / "project-memory.md", report)
+    copy_tree(template_path("claude-commands"), root / ".claude" / "commands", report)
+    _copy_project_memory_skill(root, root / ".claude", report)
+    if include_multiagent:
+        copy_tree(template_path("claude-agents"), root / ".claude" / "agents", report)
+
+
+def _install_multiagent_profile(root: Path, report: InstallReport) -> None:
+    _install_codex_profile(root, report)
+    _install_claude_profile(root, report, include_multiagent=True)
+    copy_tree(template_path("agents-roles"), root / ".agents" / "roles", report)
+
+
 def install_project(
     target: Path,
     agent: str = "codex",
@@ -243,6 +327,7 @@ def install_project(
     root = target.resolve()
     root.mkdir(parents=True, exist_ok=True)
     report = InstallReport(target=root)
+    agent_profile = _normalize_agent_profile(root, agent, upgrade=upgrade)
 
     _ensure_git_repo(root, report)
 
@@ -257,19 +342,18 @@ def install_project(
     write_managed_file(template_path("README.project-memory.md"), project_memory / "README.md", report)
 
     merge_gitignore(root / ".gitignore", read_template("root.gitignore.block"), report)
-    merge_agents_block(
-        root / "AGENTS.md",
-        read_template("AGENTS.block.md"),
-        report,
-        full_template=read_template("AGENTS.full.md"),
-    )
+    if agent_profile == "codex":
+        _install_codex_profile(root, report)
+    elif agent_profile == "claude":
+        _install_claude_profile(root, report)
+    else:
+        _install_multiagent_profile(root, report)
 
-    copy_tree(skill_root(), root / ".agents" / "skills" / "dependency-graph-rag", report)
     copy_tree(runtime_root() / "tools" / "project_memory", root / "tools" / "project_memory", report)
     if with_vector:
         _setup_vector_runtime(root, report)
     _write_wrappers(root, report)
-    _write_install_metadata(root, report, "upgrade" if upgrade else "install")
+    _write_install_metadata(root, report, "upgrade" if upgrade else "install", agent_profile)
 
     _run_runtime(root, report, ["init"])
     _run_runtime(root, report, ["migrate"])
@@ -277,7 +361,7 @@ def install_project(
     if run_index:
         _run_runtime(root, report, ["index", "--mode", "full"])
 
-    report.commands.append(f"version={__version__} agent={agent} profile={profile} runtime={runtime}")
+    report.commands.append(f"version={__version__} agent={agent_profile} profile={profile} runtime={runtime}")
     return ProjectInstallResult(report)
 
 
@@ -285,11 +369,22 @@ def uninstall_project(target: Path, purge: bool = False, keep_memory: bool = Tru
     root = target.resolve()
     report = InstallReport(target=root)
     remove_agents_block(root / "AGENTS.md", report)
+    remove_agents_block(root / "CLAUDE.md", report)
     remove_gitignore_block(root / ".gitignore", report)
     for path in [
         root / "pmem",
         root / "pmem.ps1",
         root / ".agents" / "skills" / "dependency-graph-rag",
+        root / ".agents" / "roles",
+        root / ".claude" / "rules" / "project-memory.md",
+        root / ".claude" / "skills" / "dependency-graph-rag",
+        root / ".claude" / "commands" / "pmem-context.md",
+        root / ".claude" / "commands" / "pmem-status.md",
+        root / ".claude" / "commands" / "pmem-audit.md",
+        root / ".claude" / "agents" / "pmem-coordinator.md",
+        root / ".claude" / "agents" / "pmem-implementer.md",
+        root / ".claude" / "agents" / "pmem-researcher.md",
+        root / ".claude" / "agents" / "pmem-reviewer.md",
         root / "tools" / "project_memory",
     ]:
         if path.is_dir():

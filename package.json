@@ -1,0 +1,39 @@
+{
+  "name": "@anku/project-memory-kit",
+  "version": "0.8.0",
+  "description": "Local-first project memory installer for coding agents",
+  "license": "MIT",
+  "author": "AnKu304",
+  "homepage": "https://github.com/AnKu304/project-memory-kit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnKu304/project-memory-kit.git"
+  },
+  "keywords": [
+    "agents",
+    "codex",
+    "claude",
+    "project-memory",
+    "rag",
+    "sqlite"
+  ],
+  "bin": {
+    "pmem": "./npm/bin/pmem.js",
+    "project-memory-kit": "./npm/bin/pmem.js"
+  },
+  "files": [
+    "src",
+    "npm",
+    "README.md",
+    "README.en.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:src/project_memory_kit/installer/runtime python3 -m unittest discover -s tests"
+  }
+}

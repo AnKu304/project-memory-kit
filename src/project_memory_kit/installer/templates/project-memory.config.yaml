@@ -1,4 +1,4 @@
-version: 1
+version: 2
 project:
   name: auto
 paths:
@@ -87,6 +87,10 @@ knowledge:
   max_context_items: 5
 rationale:
   max_context_items: 5
+audit:
+  secrets:
+    max_file_bytes: 1000000
+    max_findings: 100
 modules:
   human:
     enabled: false

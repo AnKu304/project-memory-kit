@@ -32,6 +32,8 @@ Useful checks:
 ./pmem search --query "<query>" --debug
 ./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem audit
+./pmem audit --secrets
+./pmem optimize
 ./pmem tests --base HEAD --explain
 ./pmem watch --once
 ```

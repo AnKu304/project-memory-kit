@@ -160,8 +160,8 @@ TOOLS: list[dict[str, Any]] = [
     _tool(
         "pmem_audit",
         "Audit project memory",
-        "Check memory governance issues such as stale index, conflicts, and rationale without evidence.",
-        _schema(),
+        "Check memory governance issues such as stale index, conflicts, rationale without evidence, and optional secret findings.",
+        _schema({"secrets": {"type": "boolean", "default": False}}),
     ),
     _tool(
         "pmem_modules",
@@ -372,9 +372,9 @@ def _tool_eval(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     return _text_result(format_eval(report), {"eval": report}, is_error=int(report["failed"]) > 0)
 
 
-def _tool_audit(root: Path, _: dict[str, Any]) -> dict[str, Any]:
-    report = audit_project(root)
-    return _text_result(format_audit(report), {"audit": report})
+def _tool_audit(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    report = audit_project(root, include_secrets=bool(args.get("secrets")))
+    return _text_result(format_audit(report), {"audit": report}, is_error=not bool(report["ok"]))
 
 
 def _tool_modules(root: Path, _: dict[str, Any]) -> dict[str, Any]:

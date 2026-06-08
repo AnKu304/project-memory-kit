@@ -184,6 +184,48 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIsNone(row)
             self.assertEqual(chunk_count, 0)
 
+    def test_audit_secrets_optimize_and_mcp_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            (root / "config.py").write_text(
+                "pass" + "word = \"not-a-real-value-for-scanner\"\n",
+                encoding="utf-8",
+            )
+
+            audit = subprocess.run(
+                [str(root / "pmem"), "audit", "--secrets"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(audit.returncode, 1, audit.stderr)
+            self.assertIn("possible_secret", audit.stdout)
+            self.assertIn("config.py:1", audit.stdout)
+            self.assertNotIn("not-a-real-value-for-scanner", audit.stdout)
+
+            optimize = subprocess.run(
+                [str(root / "pmem"), "optimize"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(optimize.returncode, 0, optimize.stderr)
+            self.assertIn("Memory Optimize", optimize.stdout)
+
+            mcp_config = subprocess.run(
+                [str(root / "pmem"), "mcp-config"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(mcp_config.returncode, 0, mcp_config.stderr)
+            self.assertIn("[mcp_servers.project_memory]", mcp_config.stdout)
+            self.assertIn(str(root / "pmem"), mcp_config.stdout)
+
     def test_modules_command_enables_optional_human_layer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

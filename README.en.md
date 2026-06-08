@@ -10,6 +10,14 @@ The memory lives inside the repository, so several chats can work on the same pr
 
 ## What It Installs
 
+Install profiles:
+
+- `Codex` by default: `AGENTS.md` and `.agents/skills/`.
+- `Claude` optional: `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, `.claude/commands/`.
+- `Multi-agent` optional: a universal structure for multiple agents, plus Codex and Claude instructions.
+
+Base Codex profile:
+
 ```text
 AGENTS.md
 .agents/skills/dependency-graph-rag/
@@ -26,7 +34,25 @@ pmem.ps1
 .gitignore
 ```
 
-If `AGENTS.md` already exists, the installer preserves user content and updates only the managed block:
+Claude profile adds:
+
+```text
+CLAUDE.md
+.claude/rules/project-memory.md
+.claude/skills/dependency-graph-rag/
+.claude/commands/pmem-context.md
+.claude/commands/pmem-status.md
+.claude/commands/pmem-audit.md
+```
+
+Multi-agent adds both instruction sets and role files:
+
+```text
+.agents/roles/
+.claude/agents/
+```
+
+If `AGENTS.md` or `CLAUDE.md` already exists, the installer preserves user content and updates only the managed block:
 
 ```text
 <!-- PMEM:BEGIN -->
@@ -34,7 +60,7 @@ If `AGENTS.md` already exists, the installer preserves user content and updates 
 <!-- PMEM:END -->
 ```
 
-External skills are not managed by this project. Install them separately and document when to use them in `AGENTS.md`.
+External skills are not managed by this project. Install them separately and document when to use them in `AGENTS.md` or `CLAUDE.md`.
 
 ## Install
 
@@ -42,6 +68,25 @@ From the target repository root:
 
 ```bash
 pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+```
+
+npm/npx option:
+
+```bash
+npx --yes --package github:AnKu304/project-memory-kit pmem init --target .
+```
+
+Choose a profile with `--agent`:
+
+```bash
+# Codex by default
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+
+# Claude
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --agent claude
+
+# Multi-agent
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --agent multiagent
 ```
 
 To force a fresh GitHub commit:
@@ -66,10 +111,17 @@ Check the install:
 ## Upgrade
 
 ```bash
-pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target .
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --agent auto
 ```
 
 Upgrade refreshes managed files and runs migrations. Databases and runtime state under `.project-memory/` are preserved.
+
+You can add a profile during upgrade:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --agent claude
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --agent multiagent
+```
 
 ## Agent Workflow
 
@@ -105,8 +157,10 @@ Installer:
 
 ```bash
 pmem init --target .
+pmem init --target . --agent claude
+pmem init --target . --agent multiagent
 pmem install --target .
-pmem upgrade --target .
+pmem upgrade --target . --agent auto
 pmem upgrade --target . --with-vector
 pmem uninstall --target . --keep-memory
 pmem uninstall --target . --purge
@@ -129,6 +183,8 @@ Installed runtime:
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "task description"
 ./pmem audit
+./pmem audit --secrets
+./pmem optimize
 ./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
@@ -153,6 +209,7 @@ Installed runtime:
 ./pmem watch --once
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
+./pmem mcp-config --root .
 ```
 
 ## Local MCP
@@ -165,6 +222,12 @@ Example MCP client config:
 [mcp_servers.project_memory]
 command = "/absolute/path/to/repo/pmem"
 args = ["mcp", "--root", "/absolute/path/to/repo"]
+```
+
+Print this snippet with:
+
+```bash
+./pmem mcp-config --root .
 ```
 
 Available MCP tools:
@@ -205,6 +268,8 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - `./pmem search --debug` shows ranking components.
 - `search`, `context`, `impact`, and `tests` automatically run a local `changed` index when the database is empty or stale.
 - `status`, `stale`, `audit`, `eval`, `tests --explain`, and `watch --once` help check memory quality locally.
+- `audit --secrets` scans project files for possible secrets without printing the matched values.
+- `optimize` runs local SQLite maintenance.
 - Full records are opened only when needed.
 - Edges have `confidence`; more exact bindings receive higher scores.
 - Qdrant local + FastEmbed provide semantic search when available.
@@ -253,6 +318,7 @@ Run:
 
 Short version:
 
+- `0.8.0`: npm/npx distribution, `Codex`/`Claude`/`Multi-agent` profiles, Claude Code structure, CI, `audit --secrets`, `optimize`, `mcp-config`.
 - `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, new MCP tools, parser backend config.
 - `0.6.0`: BM25, auto-index, deleted-file cleanup, optional `human` module.
 - `0.5.0`: local MCP server.

@@ -23,6 +23,8 @@ from tools.project_memory.services.knowledge import (
     write_knowledge_context,
 )
 from tools.project_memory.services.migrations import apply_migrations
+from tools.project_memory.services.maintenance import format_optimization, optimize_project
+from tools.project_memory.services.mcp_config import build_mcp_config, format_mcp_config
 from tools.project_memory.mcp import serve_stdio
 from tools.project_memory.services.modules import format_module_states, set_module_enabled
 from tools.project_memory.services.rationale import (
@@ -114,7 +116,13 @@ def command_eval(args: argparse.Namespace) -> int:
 
 
 def command_audit(args: argparse.Namespace) -> int:
-    print(format_audit(audit_project(root()), args.format), end="")
+    report = audit_project(root(), include_secrets=args.secrets)
+    print(format_audit(report, args.format), end="")
+    return 0 if report["ok"] else 1
+
+
+def command_optimize(args: argparse.Namespace) -> int:
+    print(format_optimization(optimize_project(root(), vacuum=args.vacuum), args.format), end="")
     return 0
 
 
@@ -314,6 +322,14 @@ def command_mcp(args: argparse.Namespace) -> int:
     return serve_stdio(mcp_root)
 
 
+def command_mcp_config(args: argparse.Namespace) -> int:
+    mcp_root = Path(args.root)
+    if not mcp_root.is_absolute():
+        mcp_root = root() / mcp_root
+    print(format_mcp_config(build_mcp_config(mcp_root), args.format), end="")
+    return 0
+
+
 def command_version(_: argparse.Namespace) -> int:
     print(__version__)
     return 0
@@ -387,7 +403,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("audit")
     p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.add_argument("--secrets", action="store_true")
     p.set_defaults(func=command_audit)
+
+    p = sub.add_parser("optimize")
+    p.add_argument("--vacuum", action="store_true")
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.set_defaults(func=command_optimize)
 
     p = sub.add_parser("stale")
     p.add_argument("--format", choices=["markdown", "json"], default="markdown")
@@ -522,6 +544,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("mcp")
     p.add_argument("--root", default=".")
     p.set_defaults(func=command_mcp)
+
+    p = sub.add_parser("mcp-config")
+    p.add_argument("--root", default=".")
+    p.add_argument("--format", choices=["toml", "json"], default="toml")
+    p.set_defaults(func=command_mcp_config)
 
     p = sub.add_parser("version")
     p.set_defaults(func=command_version)

@@ -63,10 +63,10 @@ def install_command(
     init_command(target=target, agent=agent, profile=profile, runtime=runtime, index=index, with_vector=with_vector)
 
 
-def upgrade_command(target: str = ".", with_vector: bool = False) -> None:
+def upgrade_command(target: str = ".", agent: str = "auto", with_vector: bool = False) -> None:
     result = install_project(
         target=_target(target),
-        agent="codex",
+        agent=agent,
         profile="python",
         runtime="local",
         run_index=False,
@@ -87,7 +87,7 @@ if typer is not None:
     @app.command("init")
     def init_typer(
         target: str = typer.Option(".", "--target", help="Repository root to install into."),
-        agent: str = typer.Option("codex", "--agent", help="Agent profile."),
+        agent: str = typer.Option("codex", "--agent", help="Agent profile: codex, claude, or multiagent."),
         profile: str = typer.Option("python", "--profile", help="Project language profile."),
         runtime: str = typer.Option("local", "--runtime", help="Runtime mode."),
         index: bool = typer.Option(False, "--index", help="Run first full index after install."),
@@ -98,7 +98,7 @@ if typer is not None:
     @app.command("install")
     def install_typer(
         target: str = typer.Option(".", "--target", help="Repository root to install into."),
-        agent: str = typer.Option("codex", "--agent", help="Agent profile."),
+        agent: str = typer.Option("codex", "--agent", help="Agent profile: codex, claude, or multiagent."),
         profile: str = typer.Option("python", "--profile", help="Project language profile."),
         runtime: str = typer.Option("local", "--runtime", help="Runtime mode."),
         index: bool = typer.Option(False, "--index", help="Run first full index after install."),
@@ -109,9 +109,10 @@ if typer is not None:
     @app.command("upgrade")
     def upgrade_typer(
         target: str = typer.Option(".", "--target", help="Repository root to upgrade."),
+        agent: str = typer.Option("auto", "--agent", help="Agent profile to preserve or install: auto, codex, claude, or multiagent."),
         with_vector: bool = typer.Option(False, "--with-vector", help="Create or update the managed vector runtime venv."),
     ) -> None:
-        upgrade_command(target=target, with_vector=with_vector)
+        upgrade_command(target=target, agent=agent, with_vector=with_vector)
 
     @app.command("version")
     def version_typer() -> None:
@@ -143,6 +144,7 @@ if typer is not None:
         "search",
         "eval",
         "audit",
+        "optimize",
         "stale",
         "watch",
         "knowledge",
@@ -150,6 +152,7 @@ if typer is not None:
         "migrate",
         "modules",
         "mcp",
+        "mcp-config",
     ]:
         app.command(_name, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})(
             _forward(_name)
@@ -163,7 +166,7 @@ def _argparse_main(argv: list[str]) -> int:
     for name in ["init", "install"]:
         p = sub.add_parser(name)
         p.add_argument("--target", default=".")
-        p.add_argument("--agent", default="codex")
+        p.add_argument("--agent", choices=["codex", "claude", "universal", "multiagent", "all"], default="codex")
         p.add_argument("--profile", default="python")
         p.add_argument("--runtime", default="local")
         p.add_argument("--index", action="store_true")
@@ -171,6 +174,7 @@ def _argparse_main(argv: list[str]) -> int:
 
     p = sub.add_parser("upgrade")
     p.add_argument("--target", default=".")
+    p.add_argument("--agent", choices=["auto", "preserve", "codex", "claude", "universal", "multiagent", "all"], default="auto")
     p.add_argument("--with-vector", action="store_true")
 
     p = sub.add_parser("uninstall")
@@ -180,7 +184,27 @@ def _argparse_main(argv: list[str]) -> int:
 
     sub.add_parser("version")
 
-    for name in ["doctor", "status", "index", "impact", "context", "tests", "record-failure", "search", "eval", "audit", "stale", "watch", "knowledge", "rationale", "migrate", "modules", "mcp"]:
+    for name in [
+        "doctor",
+        "status",
+        "index",
+        "impact",
+        "context",
+        "tests",
+        "record-failure",
+        "search",
+        "eval",
+        "audit",
+        "optimize",
+        "stale",
+        "watch",
+        "knowledge",
+        "rationale",
+        "migrate",
+        "modules",
+        "mcp",
+        "mcp-config",
+    ]:
         p = sub.add_parser(name)
         p.add_argument("args", nargs=argparse.REMAINDER)
 
@@ -189,7 +213,7 @@ def _argparse_main(argv: list[str]) -> int:
         init_command(ns.target, ns.agent, ns.profile, ns.runtime, ns.index, ns.with_vector)
         return 0
     if ns.command == "upgrade":
-        upgrade_command(ns.target, ns.with_vector)
+        upgrade_command(ns.target, ns.agent, ns.with_vector)
         return 0
     if ns.command == "version":
         print(__version__)

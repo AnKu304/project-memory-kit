@@ -63,6 +63,7 @@ For memory quality checks, run:
 ```bash
 ./pmem stale
 ./pmem audit
+./pmem audit --secrets
 ./pmem eval --file .project-memory/evals/search.jsonl
 ```
 

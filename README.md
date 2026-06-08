@@ -10,6 +10,14 @@ English version: [README.en.md](README.en.md)
 
 ## Что появится в проекте
 
+Профили установки:
+
+- `Codex` по умолчанию: `AGENTS.md` и `.agents/skills/`.
+- `Claude` опционально: `CLAUDE.md`, `.claude/rules/`, `.claude/skills/`, `.claude/commands/`.
+- `Multi-agent` опционально: универсальная структура для нескольких агентов, плюс Codex и Claude инструкции.
+
+Базовая структура Codex-профиля:
+
 ```text
 AGENTS.md
 .agents/skills/dependency-graph-rag/
@@ -26,7 +34,25 @@ pmem.ps1
 .gitignore
 ```
 
-Если `AGENTS.md` уже есть, installer сохраняет пользовательский текст и обновляет только managed-блок:
+Claude-профиль добавляет:
+
+```text
+CLAUDE.md
+.claude/rules/project-memory.md
+.claude/skills/dependency-graph-rag/
+.claude/commands/pmem-context.md
+.claude/commands/pmem-status.md
+.claude/commands/pmem-audit.md
+```
+
+Multi-agent добавляет оба набора инструкций и роли:
+
+```text
+.agents/roles/
+.claude/agents/
+```
+
+Если `AGENTS.md` или `CLAUDE.md` уже есть, installer сохраняет пользовательский текст и обновляет только managed-блок:
 
 ```text
 <!-- PMEM:BEGIN -->
@@ -34,7 +60,7 @@ pmem.ps1
 <!-- PMEM:END -->
 ```
 
-Внешние skills не управляются этим проектом. Их можно ставить отдельно и описывать правила их использования в `AGENTS.md`.
+Внешние skills не управляются этим проектом. Их можно ставить отдельно и описывать правила их использования в `AGENTS.md` или `CLAUDE.md`.
 
 ## Установка
 
@@ -42,6 +68,25 @@ pmem.ps1
 
 ```bash
 pipx run --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+```
+
+npm/npx вариант:
+
+```bash
+npx --yes --package github:AnKu304/project-memory-kit pmem init --target .
+```
+
+Профиль выбирается флагом `--agent`:
+
+```bash
+# Codex по умолчанию
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target .
+
+# Claude
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --agent claude
+
+# Multi-agent
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --agent multiagent
 ```
 
 Чтобы точно взять свежий commit:
@@ -66,10 +111,17 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ## Обновление
 
 ```bash
-pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target .
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --agent auto
 ```
 
 Upgrade обновляет managed-файлы и запускает migrations. Базы и runtime state в `.project-memory/` сохраняются.
+
+Профиль можно добавить при обновлении:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --agent claude
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem upgrade --target . --agent multiagent
+```
 
 ## Рабочий цикл агента
 
@@ -105,8 +157,10 @@ Installer:
 
 ```bash
 pmem init --target .
+pmem init --target . --agent claude
+pmem init --target . --agent multiagent
 pmem install --target .
-pmem upgrade --target .
+pmem upgrade --target . --agent auto
 pmem upgrade --target . --with-vector
 pmem uninstall --target . --keep-memory
 pmem uninstall --target . --purge
@@ -129,6 +183,8 @@ pmem version
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "описание задачи"
 ./pmem audit
+./pmem audit --secrets
+./pmem optimize
 ./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
@@ -153,6 +209,7 @@ pmem version
 ./pmem watch --once
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
+./pmem mcp-config --root .
 ```
 
 ## Локальный MCP
@@ -165,6 +222,12 @@ pmem version
 [mcp_servers.project_memory]
 command = "/absolute/path/to/repo/pmem"
 args = ["mcp", "--root", "/absolute/path/to/repo"]
+```
+
+Этот фрагмент можно вывести командой:
+
+```bash
+./pmem mcp-config --root .
 ```
 
 Доступные MCP tools:
@@ -205,6 +268,8 @@ MCP удобен для коротких structured-ответов агенту.
 - `./pmem search --debug` показывает компоненты ранжирования.
 - `search`, `context`, `impact` и `tests` автоматически запускают локальный `changed` index, если база пустая или stale.
 - `status`, `stale`, `audit`, `eval`, `tests --explain` и `watch --once` помогают проверять качество памяти локально.
+- `audit --secrets` ищет возможные секреты в проектных файлах и не печатает найденные значения.
+- `optimize` запускает локальное обслуживание SQLite.
 - Полные записи открываются только при необходимости.
 - У связей есть `confidence`; более точные bindings получают более высокий score.
 - Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
@@ -253,6 +318,7 @@ modules:
 
 Кратко:
 
+- `0.8.0`: npm/npx distribution, профили `Codex`/`Claude`/`Multi-agent`, Claude Code структура, CI, `audit --secrets`, `optimize`, `mcp-config`.
 - `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, новые MCP tools, parser backend config.
 - `0.6.0`: BM25, auto-index, cleanup удаленных файлов, optional `human` module.
 - `0.5.0`: локальный MCP server.

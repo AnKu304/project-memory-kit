@@ -8,7 +8,7 @@ Use `./pmem status` before larger work when you need a quick health check.
 
 Use `./pmem search --query "<query>" --debug` when retrieved context looks incomplete or surprising.
 
-Use `./pmem eval --file .project-memory/evals/search.jsonl` and `./pmem audit` to check memory quality before relying on project rules across chats.
+Use `./pmem eval --file .project-memory/evals/search.jsonl`, `./pmem audit`, and `./pmem audit --secrets` to check memory quality before relying on project rules across chats.
 
 Use `./pmem knowledge context --task "<task>"` for research, architecture, SEO, UX, design, product, content, positioning, or principle-heavy tasks.
 

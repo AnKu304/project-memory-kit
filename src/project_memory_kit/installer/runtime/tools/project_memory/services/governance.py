@@ -8,10 +8,11 @@ from tools.project_memory.config import config_path
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.services.knowledge import knowledge_conflict_count
 from tools.project_memory.services.rationale import rationale_conflict_count
+from tools.project_memory.services.secret_scan import scan_secrets
 from tools.project_memory.services.status import project_status
 
 
-def audit_project(root: Path) -> dict[str, Any]:
+def audit_project(root: Path, include_secrets: bool = False) -> dict[str, Any]:
     status = project_status(root)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
@@ -54,10 +55,33 @@ def audit_project(root: Path) -> dict[str, Any]:
                 "title": row["title"],
             }
         )
+    secret_findings = []
+    if include_secrets:
+        secret_findings = scan_secrets(root)
+        for item in secret_findings:
+            issues.append(
+                {
+                    "kind": "possible_secret",
+                    "severity": "error",
+                    "path": item.path,
+                    "line": item.line,
+                    "rule": item.rule,
+                    "fingerprint": item.fingerprint,
+                }
+            )
     return {
         "ok": not any(item["severity"] == "error" for item in issues),
         "index_fresh": bool(index["fresh"]),
         "issues": issues,
+        "secret_findings": [
+            {
+                "path": item.path,
+                "line": item.line,
+                "rule": item.rule,
+                "fingerprint": item.fingerprint,
+            }
+            for item in secret_findings
+        ],
         "status": status,
     }
 
@@ -74,6 +98,9 @@ def format_audit(report: dict[str, Any], fmt: str = "markdown") -> str:
     if report["issues"]:
         lines.append("- issue list:")
         for issue in report["issues"]:
-            detail = issue.get("detail") or issue.get("title") or issue.get("count") or ""
+            if issue.get("kind") == "possible_secret":
+                detail = f"{issue.get('path')}:{issue.get('line')} {issue.get('rule')} {issue.get('fingerprint')}"
+            else:
+                detail = issue.get("detail") or issue.get("title") or issue.get("count") or ""
             lines.append(f"  - {issue['severity']} {issue['kind']}: {detail}")
     return "\n".join(lines) + "\n"
