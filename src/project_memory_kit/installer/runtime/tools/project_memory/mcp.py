@@ -28,7 +28,7 @@ from tools.project_memory.services.modules import format_module_states, module_s
 from tools.project_memory.services.rationale import build_rationale_context, search_rationale, show_rationale
 from tools.project_memory.services.search import search as search_service
 from tools.project_memory.services.status import format_stale, format_status, project_status
-from tools.project_memory.services.tasks import format_tasks, list_tasks
+from tools.project_memory.services.tasks import assign_task, close_task, create_task, format_tasks, list_tasks
 from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.mcp_tools import TOOLS
 from tools.project_memory.version import __version__
@@ -194,6 +194,42 @@ def _tool_tasks(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     return _text_result(format_tasks(tasks), {"tasks": [item.__dict__ for item in tasks]})
 
 
+def _tool_tasks_create(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    evidence = args.get("evidence") if isinstance(args.get("evidence"), list) else []
+    item = create_task(
+        root,
+        str(args.get("title") or ""),
+        task_type=str(args.get("type") or "handoff"),
+        role=str(args.get("role") or "any"),
+        goal=str(args.get("goal") or ""),
+        context=str(args.get("context") or ""),
+        evidence=[str(value) for value in evidence],
+        russian_subtitle=str(args.get("russian_subtitle") or ""),
+    )
+    text = f"task created: {item.path}"
+    return _text_result(text, {"task": item.__dict__})
+
+
+def _tool_tasks_close(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    item = close_task(
+        root,
+        str(args.get("file") or ""),
+        str(args.get("summary") or ""),
+        command=str(args.get("command") or "") or None,
+    )
+    return _text_result(f"task closed: {item.path}", {"task": item.__dict__})
+
+
+def _tool_tasks_assign(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    item = assign_task(
+        root,
+        str(args.get("file") or ""),
+        str(args.get("role") or ""),
+        summary=str(args.get("summary") or ""),
+    )
+    return _text_result(f"task assigned: {item.path}", {"task": item.__dict__})
+
+
 def _tool_human_status(root: Path, _: dict[str, Any]) -> dict[str, Any]:
     status = human_status(root)
     return _text_result(format_human_status(status), {"human": status})
@@ -298,6 +334,9 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "pmem_modules": _tool_modules,
     "pmem_watch_status": _tool_watch_status,
     "pmem_tasks": _tool_tasks,
+    "pmem_tasks_create": _tool_tasks_create,
+    "pmem_tasks_close": _tool_tasks_close,
+    "pmem_tasks_assign": _tool_tasks_assign,
     "pmem_human_status": _tool_human_status,
     "pmem_human_export": _tool_human_export,
     "pmem_human_search": _tool_human_search,

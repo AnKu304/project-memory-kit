@@ -1147,6 +1147,100 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("app.py", by_id[3]["result"]["content"][0]["text"])
             self.assertIn("results", by_id[3]["result"]["structuredContent"])
 
+    def test_mcp_task_write_tools_create_assign_and_close(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root, agent="multiagent")
+
+            messages = [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "unittest", "version": "0"},
+                    },
+                },
+                {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "pmem_tasks_create",
+                        "arguments": {
+                            "title": "Build payment form",
+                            "russian_subtitle": "Форма оплаты",
+                            "type": "handoff",
+                            "role": "frontend",
+                            "goal": "Implement the payment form UI.",
+                            "context": "Use project UI rules.",
+                            "evidence": ["docs/ui.md", "pmem_context:payment"],
+                        },
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "pmem_tasks_assign",
+                        "arguments": {
+                            "file": ".agents/tasks/build-payment-form.md",
+                            "role": "reviewer",
+                            "summary": "Needs review after implementation.",
+                        },
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "pmem_tasks_close",
+                        "arguments": {
+                            "file": ".agents/tasks/build-payment-form.md",
+                            "summary": "Reviewed and closed.",
+                            "command": "./pmem tasks check",
+                        },
+                    },
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {"name": "pmem_tasks", "arguments": {"all": True}},
+                },
+            ]
+            payload = "\n".join(json.dumps(message) for message in messages) + "\n"
+            mcp = subprocess.run(
+                [str(root / "pmem"), "mcp", "--root", str(root)],
+                cwd=root,
+                input=payload,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(mcp.returncode, 0, mcp.stderr)
+            responses = [json.loads(line) for line in mcp.stdout.splitlines()]
+            by_id = {item["id"]: item for item in responses}
+            tools = {tool["name"]: tool for tool in by_id[2]["result"]["tools"]}
+            for name in ["pmem_tasks_create", "pmem_tasks_assign", "pmem_tasks_close"]:
+                self.assertIn(name, tools)
+                self.assertFalse(tools[name]["annotations"]["readOnlyHint"])
+
+            self.assertEqual(by_id[3]["result"]["structuredContent"]["task"]["path"], ".agents/tasks/build-payment-form.md")
+            self.assertEqual(by_id[4]["result"]["structuredContent"]["task"]["role"], "reviewer")
+            self.assertEqual(by_id[5]["result"]["structuredContent"]["task"]["status"], "done")
+            self.assertIn("Build payment form", by_id[6]["result"]["content"][0]["text"])
+            task_text = (root / ".agents/tasks/build-payment-form.md").read_text(encoding="utf-8")
+            self.assertIn("# Build payment form / Форма оплаты", task_text)
+            self.assertIn("Role: reviewer", task_text)
+            self.assertIn("Summary: Reviewed and closed.", task_text)
+
     def test_knowledge_lifecycle_updates_current_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

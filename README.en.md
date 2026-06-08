@@ -283,6 +283,9 @@ pmem_audit
 pmem_modules
 pmem_watch_status
 pmem_tasks
+pmem_tasks_create
+pmem_tasks_assign
+pmem_tasks_close
 pmem_human_status
 pmem_human_export
 pmem_human_search
@@ -322,6 +325,7 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - The Next.js graph adds route-to-component edges, `use client`/server boundary metadata, and HTTP methods for `route.ts/js`.
 - JS/TS uses a configurable backend. The default is `auto`: TypeScript compiler API when `node` and `typescript` are available in the project, otherwise the built-in lexical parser. `tree_sitter` and `lsp` are reserved optional backends without mandatory dependencies.
 - A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale tools over the same `pmem` runtime.
+- MCP Task Write Tools can create, assign, and close `.agents/tasks/`; each write re-indexes the task locally.
 - `tasks check` shows open handoff/user tasks from `.agents/tasks/`, so agents do not miss work left by another chat.
 - `tasks close` closes a task file, appends a completion block, and re-indexes the changed task.
 - `tasks linear` is a local Linear bridge: it exports `.agents/tasks/` to JSON and imports issues back into task files.
@@ -392,6 +396,7 @@ Run:
 
 Short version:
 
+- `0.19.0`: MCP Task Write Tools; MCP can create, assign, and close `.agents/tasks/`.
 - `0.18.0`: Install Wizard; `pmem init --interactive` for choosing the profile and optional modules.
 - `0.17.0`: Human Graph Viewer; static `human graph --html` for viewing the Human graph.
 - `0.16.0`: Memory Quality Dashboard; `pmem report` for local Markdown/JSON memory health reports.

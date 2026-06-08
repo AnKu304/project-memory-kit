@@ -116,6 +116,52 @@ TOOLS: list[dict[str, Any]] = [
         "Return active multi-agent task handoffs from .agents/tasks.",
         _schema({"role": {"type": "string"}, "all": {"type": "boolean", "default": False}}),
     ),
+    _tool(
+        "pmem_tasks_create",
+        "Create project task",
+        "Create a local .agents/tasks Markdown task for a user request or agent-to-agent handoff.",
+        _schema(
+            {
+                "title": {"type": "string"},
+                "russian_subtitle": {"type": "string"},
+                "type": {"type": "string", "enum": ["user", "handoff"], "default": "handoff"},
+                "role": {"type": "string", "default": "any"},
+                "goal": {"type": "string"},
+                "context": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}, "default": []},
+            },
+            ["title"],
+        ),
+        read_only=False,
+    ),
+    _tool(
+        "pmem_tasks_close",
+        "Close project task",
+        "Mark a local .agents/tasks Markdown task as done and append a completion summary.",
+        _schema(
+            {
+                "file": {"type": "string"},
+                "summary": {"type": "string"},
+                "command": {"type": "string"},
+            },
+            ["file", "summary"],
+        ),
+        read_only=False,
+    ),
+    _tool(
+        "pmem_tasks_assign",
+        "Assign project task",
+        "Update the role on a local .agents/tasks Markdown task and append an assignment note.",
+        _schema(
+            {
+                "file": {"type": "string"},
+                "role": {"type": "string"},
+                "summary": {"type": "string"},
+            },
+            ["file", "role"],
+        ),
+        read_only=False,
+    ),
     _tool("pmem_human_status", "Human layer status", "Return optional Human/Obsidian-like layer status.", _schema()),
     _tool(
         "pmem_human_export",

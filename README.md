@@ -283,6 +283,9 @@ pmem_audit
 pmem_modules
 pmem_watch_status
 pmem_tasks
+pmem_tasks_create
+pmem_tasks_assign
+pmem_tasks_close
 pmem_human_status
 pmem_human_export
 pmem_human_search
@@ -322,6 +325,8 @@ MCP удобен для коротких structured-ответов агенту.
 - Next.js graph добавляет route-to-component edges, `use client`/server boundary и HTTP methods для `route.ts/js`.
 - Для JS/TS используется настраиваемый backend. По умолчанию `auto`: TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе встроенный lexical parser. `tree_sitter` и `lsp` зарезервированы как optional backends без обязательных зависимостей.
 - Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale поверх того же `pmem` runtime.
+- MCP Task Write Tools позволяют создавать, назначать и закрывать `.agents/tasks/`, после чего задача переиндексируется локально.
+- MCP-инструменты для записи задач
 - `tasks check` показывает открытые handoff/user tasks из `.agents/tasks/`, чтобы агент не пропускал задачи от других чатов.
 - `tasks close` закрывает task-файл, добавляет completion block и переиндексирует измененную задачу.
 - `tasks linear` работает как локальный bridge для Linear: экспортирует `.agents/tasks/` в JSON и импортирует issues обратно в task-файлы.
@@ -392,6 +397,7 @@ Linear bridge выключен по умолчанию и не требует Li
 
 Кратко:
 
+- `0.19.0`: MCP Task Write Tools; MCP может создавать, назначать и закрывать `.agents/tasks/`.
 - `0.18.0`: Install Wizard; `pmem init --interactive` для выбора профиля и optional модулей.
 - `0.17.0`: Human Graph Viewer; статический `human graph --html` для просмотра Human-графа.
 - `0.16.0`: Memory Quality Dashboard; `pmem report` для локального Markdown/JSON отчета по состоянию памяти.

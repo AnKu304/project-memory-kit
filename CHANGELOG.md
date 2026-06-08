@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.19.0
+
+Added:
+
+- MCP Task Write Tools.
+- MCP-инструменты для записи задач.
+- `pmem_tasks_create`, `pmem_tasks_assign`, and `pmem_tasks_close`.
+
+Updated:
+
+- MCP task tools can now create local `.agents/tasks/` Markdown handoffs, update task roles, and close completed tasks.
+- Task write tools are marked as non-read-only in MCP annotations.
+
+Removed:
+
+- Nothing.
+
+Better than 0.18.0:
+
+- MCP-connected agents can coordinate task handoffs without manually editing Markdown files.
+- Created and updated tasks are re-indexed locally, so other chats can find the latest state through project memory.
+
 ## 0.18.0
 
 Added:
