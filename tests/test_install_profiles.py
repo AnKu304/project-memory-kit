@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sqlite3
 import subprocess
@@ -7,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from project_memory_kit.cli import init_command
 from project_memory_kit.installer.install_project import install_project
 
 
@@ -53,6 +56,28 @@ class InstallProfilesTest(unittest.TestCase):
             install_project(root, agent="universal")
             metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["agent_profile"], "multiagent")
+
+    def test_interactive_init_applies_scripted_choices(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            answers = iter(["codex", "yes", "yes", "fallback", "yes"])
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                init_command(
+                    target=str(root),
+                    interactive=True,
+                    input_func=lambda _: next(answers),
+                )
+
+            metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["agent_profile"], "multiagent")
+            self.assertTrue((root / ".agents/tasks/_templates/user-task.md").exists())
+            self.assertTrue((root / ".agents/roles/README.md").exists())
+            config = (root / ".project-memory/config.yaml").read_text(encoding="utf-8")
+            self.assertIn("backend: fallback", config)
+            self.assertIn("human:\n    enabled: true", config)
+            self.assertTrue((root / ".project-memory/human").exists())
+            self.assertTrue((root / ".project-memory/reports/codex-mcp-config.toml").exists())
 
     def test_profile_upgrade_preserves_memory_and_tracks_installed_profiles(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

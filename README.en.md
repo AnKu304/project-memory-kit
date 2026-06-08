@@ -79,6 +79,14 @@ npm/npx option:
 npx --yes --package github:AnKu304/project-memory-kit pmem init --target .
 ```
 
+Interactive install:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --interactive
+```
+
+The wizard asks for the agent profile, task templates, Human layer, vector backend, and MCP config. Commands without `--interactive` work as before.
+
 Choose a profile with `--agent`:
 
 ```bash
@@ -161,6 +169,7 @@ Installer:
 
 ```bash
 pmem init --target .
+pmem init --target . --interactive
 pmem init --target . --agent claude
 pmem init --target . --agent multiagent
 pmem install --target .
@@ -383,6 +392,7 @@ Run:
 
 Short version:
 
+- `0.18.0`: Install Wizard; `pmem init --interactive` for choosing the profile and optional modules.
 - `0.17.0`: Human Graph Viewer; static `human graph --html` for viewing the Human graph.
 - `0.16.0`: Memory Quality Dashboard; `pmem report` for local Markdown/JSON memory health reports.
 - `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary, and API route methods.

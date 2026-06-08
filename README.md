@@ -79,6 +79,14 @@ npm/npx вариант:
 npx --yes --package github:AnKu304/project-memory-kit pmem init --target .
 ```
 
+Интерактивная установка:
+
+```bash
+pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git pmem init --target . --interactive
+```
+
+Wizard спросит профиль агента, task templates, Human layer, vector backend и MCP config. Обычные команды без `--interactive` работают как раньше.
+
 Профиль выбирается флагом `--agent`:
 
 ```bash
@@ -161,6 +169,7 @@ Installer:
 
 ```bash
 pmem init --target .
+pmem init --target . --interactive
 pmem init --target . --agent claude
 pmem init --target . --agent multiagent
 pmem install --target .
@@ -383,6 +392,7 @@ Linear bridge выключен по умолчанию и не требует Li
 
 Кратко:
 
+- `0.18.0`: Install Wizard; `pmem init --interactive` для выбора профиля и optional модулей.
 - `0.17.0`: Human Graph Viewer; статический `human graph --html` для просмотра Human-графа.
 - `0.16.0`: Memory Quality Dashboard; `pmem report` для локального Markdown/JSON отчета по состоянию памяти.
 - `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary и API route methods.

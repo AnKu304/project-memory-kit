@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.18.0
+
+Added:
+
+- Install Wizard.
+- Мастер установки.
+- `pmem init --interactive` and `pmem install --interactive`.
+
+Updated:
+
+- Interactive install can choose the agent profile, multi-agent task templates, Human layer, vector backend, and MCP config.
+- Non-interactive install and upgrade behavior stays unchanged.
+
+Removed:
+
+- Nothing.
+
+Better than 0.17.0:
+
+- New projects can be bootstrapped with fewer flags and fewer missed optional settings.
+- The wizard remains script-testable through stdin choices.
+
 ## 0.17.0
 
 Added:
