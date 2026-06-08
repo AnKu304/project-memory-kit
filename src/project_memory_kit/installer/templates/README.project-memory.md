@@ -61,10 +61,11 @@ When enabled, Human export creates an Obsidian-like Markdown view over current k
 ./pmem human export
 ./pmem human sync
 ./pmem human graph
+./pmem human graph --html
 ./pmem human search --query "<query>"
 ```
 
-Generated files include `human/index.md`, `human/knowledge/**/*.md`, `human/rationale/**/*.md`, `human/graph.mmd`, and `human/graph.json`.
+Generated files include `human/index.md`, `human/knowledge/**/*.md`, `human/rationale/**/*.md`, `human/graph.mmd`, `human/graph.json`, and optional `human/graph.html`.
 `human sync` can pull manual edits from generated Human notes back into source memory records, and it reports conflicts when both sides changed.
 
 Linear bridge is available without extra runtime dependencies:

@@ -203,6 +203,7 @@ pmem version
 ./pmem human sync
 ./pmem human search --query "design rules"
 ./pmem human graph
+./pmem human graph --html
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
@@ -316,6 +317,7 @@ MCP удобен для коротких structured-ответов агенту.
 - `tasks close` закрывает task-файл, добавляет completion block и переиндексирует измененную задачу.
 - `tasks linear` работает как локальный bridge для Linear: экспортирует `.agents/tasks/` в JSON и импортирует issues обратно в task-файлы.
 - `human` module создает Obsidian-like Markdown layer поверх current knowledge/rationale: `.project-memory/human/index.md`, generated notes, `graph.mmd` и `graph.json`.
+- `human graph --html` создает локальный `graph.html` с фильтрами по layer/type/status.
 - `search --layer human` ищет по generated human notes.
 - `mcp-config --client claude --write` может записать `.mcp.json`, сохранив существующие настройки.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
@@ -341,6 +343,7 @@ Human layer нужен, если хочется человекочитаемую
 ./pmem human export
 ./pmem human sync
 ./pmem human graph
+./pmem human graph --html
 ./pmem human search --query "SEO rules"
 ```
 
@@ -380,6 +383,7 @@ Linear bridge выключен по умолчанию и не требует Li
 
 Кратко:
 
+- `0.17.0`: Human Graph Viewer; статический `human graph --html` для просмотра Human-графа.
 - `0.16.0`: Memory Quality Dashboard; `pmem report` для локального Markdown/JSON отчета по состоянию памяти.
 - `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary и API route methods.
 - `0.14.0`: Real File Watcher; локальный polling watcher по hash с явным `watch --serve`.

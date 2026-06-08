@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.17.0
+
+Added:
+
+- Human Graph Viewer.
+- Визуальный просмотр графа Human-слоя.
+- `./pmem human graph --html`.
+- Static local `graph.html` with layer/type/status filters and search.
+
+Updated:
+
+- Human graph JSON now includes note status for filtering.
+
+Removed:
+
+- Nothing.
+
+Better than 0.16.0:
+
+- The Human layer can be inspected visually without running a server or installing extra packages.
+- Users and agents can filter the human-readable memory graph before opening full notes.
+
 ## 0.16.0
 
 Added:

@@ -9,6 +9,7 @@ from typing import Any
 from tools.project_memory.config import config_path
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_text, stable_id
+from tools.project_memory.services.human_graph_html import render_human_graph_html
 from tools.project_memory.services.knowledge import update_knowledge
 from tools.project_memory.services.modules import module_enabled
 from tools.project_memory.services.rationale import update_rationale
@@ -32,6 +33,15 @@ class HumanGraphReport:
     enabled: bool
     json_path: str
     mermaid_path: str
+    nodes: int
+    edges: int
+
+
+@dataclass(frozen=True)
+class HumanGraphHtmlReport:
+    enabled: bool
+    html_path: str
+    json_path: str
     nodes: int
     edges: int
 
@@ -336,6 +346,7 @@ def _graph_rows(store: SQLiteGraphStore) -> tuple[list[dict[str, Any]], list[dic
                     "layer": layer,
                     "title": row["title"],
                     "type": row["type"],
+                    "status": row["status"],
                     "path": row["path"],
                 }
             )
@@ -386,6 +397,24 @@ def format_human_graph(report: HumanGraphReport) -> str:
         "Human graph\n"
         f"- json: {report.json_path}\n"
         f"- mermaid: {report.mermaid_path}\n"
+        f"- nodes: {report.nodes}\n"
+        f"- edges: {report.edges}\n"
+    )
+
+
+def human_graph_html(root: Path) -> HumanGraphHtmlReport:
+    report = human_graph(root)
+    data = json.loads(Path(report.json_path).read_text(encoding="utf-8"))
+    html_path = _human_dir(root) / "graph.html"
+    html_path.write_text(render_human_graph_html(data), encoding="utf-8")
+    return HumanGraphHtmlReport(True, str(html_path), report.json_path, report.nodes, report.edges)
+
+
+def format_human_graph_html(report: HumanGraphHtmlReport) -> str:
+    return (
+        "Human graph HTML\n"
+        f"- html: {report.html_path}\n"
+        f"- json: {report.json_path}\n"
         f"- nodes: {report.nodes}\n"
         f"- edges: {report.edges}\n"
     )

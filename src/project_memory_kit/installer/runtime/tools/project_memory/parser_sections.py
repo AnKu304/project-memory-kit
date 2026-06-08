@@ -175,6 +175,7 @@ def add_human_parser(sub: argparse._SubParsersAction, handler: CommandHandler) -
     h.set_defaults(func=handler)
 
     h = human_sub.add_parser("graph")
+    h.add_argument("--html", action="store_true")
     h.set_defaults(func=handler)
 
     h = human_sub.add_parser("search")

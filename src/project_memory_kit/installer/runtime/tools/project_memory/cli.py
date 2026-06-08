@@ -14,10 +14,12 @@ from tools.project_memory.services.human import (
     export_human,
     format_human_export,
     format_human_graph,
+    format_human_graph_html,
     format_human_search,
     format_human_status,
     format_human_sync,
     human_graph,
+    human_graph_html,
     human_status,
     search_human,
     sync_human,
@@ -425,6 +427,9 @@ def command_human(args: argparse.Namespace) -> int:
             print(format_human_sync(report), end="")
             return 1 if report.conflicts else 0
         if args.human_command == "graph":
+            if args.html:
+                print(format_human_graph_html(human_graph_html(root())), end="")
+                return 0
             print(format_human_graph(human_graph(root())), end="")
             return 0
         if args.human_command == "search":

@@ -203,6 +203,7 @@ Installed runtime:
 ./pmem human sync
 ./pmem human search --query "design rules"
 ./pmem human graph
+./pmem human graph --html
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
@@ -316,6 +317,7 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - `tasks close` closes a task file, appends a completion block, and re-indexes the changed task.
 - `tasks linear` is a local Linear bridge: it exports `.agents/tasks/` to JSON and imports issues back into task files.
 - The `human` module creates an Obsidian-like Markdown layer over current knowledge/rationale: `.project-memory/human/index.md`, generated notes, `graph.mmd`, and `graph.json`.
+- `human graph --html` creates a local `graph.html` with layer/type/status filters.
 - `search --layer human` searches generated human notes.
 - `mcp-config --client claude --write` can write `.mcp.json` while preserving existing settings.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
@@ -341,6 +343,7 @@ The Human layer is for a human-readable Obsidian-like view over project memory. 
 ./pmem human export
 ./pmem human sync
 ./pmem human graph
+./pmem human graph --html
 ./pmem human search --query "SEO rules"
 ```
 
@@ -380,6 +383,7 @@ Run:
 
 Short version:
 
+- `0.17.0`: Human Graph Viewer; static `human graph --html` for viewing the Human graph.
 - `0.16.0`: Memory Quality Dashboard; `pmem report` for local Markdown/JSON memory health reports.
 - `0.15.0`: TS/Next Graph Depth; route-to-component edges, client/server boundary, and API route methods.
 - `0.14.0`: Real File Watcher; local hash-based polling watcher with explicit `watch --serve`.

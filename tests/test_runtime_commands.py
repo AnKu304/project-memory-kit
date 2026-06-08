@@ -920,6 +920,22 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("graph LR", mermaid)
             self.assertIn("depends_on", mermaid)
 
+            graph_html = subprocess.run(
+                [str(root / "pmem"), "human", "graph", "--html"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(graph_html.returncode, 0, graph_html.stderr)
+            self.assertIn("Human graph HTML", graph_html.stdout)
+            html = (root / ".project-memory/human/graph.html").read_text(encoding="utf-8")
+            self.assertIn("Human Memory Graph", html)
+            self.assertIn("layerFilter", html)
+            self.assertIn("typeFilter", html)
+            self.assertIn("statusFilter", html)
+            self.assertIn("knowledge:product-architecture", html)
+
     def test_mcp_human_tools_export_search_and_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
