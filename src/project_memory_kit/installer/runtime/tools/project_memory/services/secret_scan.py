@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,7 @@ SECRET_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("github_token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,}\b")),
     ("github_pat", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{30,}\b")),
+    ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b")),
     (
         "secret_assignment",
         re.compile(
@@ -38,6 +40,11 @@ SECRET_RULES: list[tuple[str, re.Pattern[str]]] = [
         ),
     ),
 ]
+ASSIGNMENT_VALUE_RE = re.compile(
+    r"(?i)\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|client[_-]?secret)\b"
+    r"\s*[:=]\s*['\"]?([A-Za-z0-9_./+=-]{16,})['\"]?"
+)
+PLACEHOLDER_RE = re.compile(r"(?i)^(?:x+|example|sample|dummy|test|changeme|replace_me|your[_-]?value|not-a-real).*$")
 
 
 @dataclass(frozen=True)
@@ -69,11 +76,52 @@ def _fingerprint(rule: str, path: str, line: int, match: str) -> str:
     return digest[:16]
 
 
+def _entropy(value: str) -> float:
+    if not value:
+        return 0.0
+    counts = {char: value.count(char) for char in set(value)}
+    length = len(value)
+    return -sum((count / length) * math.log2(count / length) for count in counts.values())
+
+
+def _allowed(finding: SecretFinding, allowlist: list[str]) -> bool:
+    candidates = {
+        finding.fingerprint,
+        finding.rule,
+        finding.path,
+        f"{finding.path}:{finding.line}",
+        f"{finding.rule}:{finding.path}",
+    }
+    return any(item in candidates for item in allowlist)
+
+
+def _config_allowlist(root: Path) -> list[str]:
+    path = root / ".project-memory" / "config.yaml"
+    if not path.exists():
+        return []
+    values: list[str] = []
+    in_allowlist = False
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("allowlist:"):
+            in_allowlist = True
+            continue
+        if in_allowlist and stripped.startswith("- "):
+            values.append(stripped[2:].strip().strip("'\""))
+            continue
+        if in_allowlist and stripped and not raw.startswith((" ", "\t")):
+            in_allowlist = False
+    return values
+
+
 def scan_secrets(root: Path, max_findings: int | None = None) -> list[SecretFinding]:
     cfg = load_config(root)
     secret_cfg = cfg.get("audit", {}).get("secrets", {})
     max_file_bytes = int(secret_cfg.get("max_file_bytes") or 1_000_000)
     limit = int(max_findings or secret_cfg.get("max_findings") or 100)
+    entropy_threshold = float(secret_cfg.get("entropy_threshold") or 4.2)
+    allowlist = [str(item) for item in secret_cfg.get("allowlist", []) if item]
+    allowlist.extend(item for item in _config_allowlist(root) if item not in allowlist)
     findings: list[SecretFinding] = []
 
     for path in sorted(root.rglob("*")):
@@ -89,19 +137,37 @@ def scan_secrets(root: Path, max_findings: int | None = None) -> list[SecretFind
             continue
         rel = path.relative_to(root).as_posix()
         for line_number, line in enumerate(text.splitlines(), start=1):
+            matched = False
             for rule, pattern in SECRET_RULES:
                 match = pattern.search(line)
                 if not match:
                     continue
-                findings.append(
-                    SecretFinding(
+                finding = SecretFinding(
+                    path=rel,
+                    line=line_number,
+                    rule=rule,
+                    fingerprint=_fingerprint(rule, rel, line_number, match.group(0)),
+                )
+                if not _allowed(finding, allowlist):
+                    findings.append(finding)
+                matched = True
+                break
+            if matched:
+                if len(findings) >= limit:
+                    break
+                continue
+            assignment = ASSIGNMENT_VALUE_RE.search(line)
+            if assignment:
+                value = assignment.group(1)
+                if len(value) >= 24 and not PLACEHOLDER_RE.match(value) and _entropy(value) >= entropy_threshold:
+                    finding = SecretFinding(
                         path=rel,
                         line=line_number,
-                        rule=rule,
-                        fingerprint=_fingerprint(rule, rel, line_number, match.group(0)),
+                        rule="high_entropy_secret",
+                        fingerprint=_fingerprint("high_entropy_secret", rel, line_number, value),
                     )
-                )
-                break
+                    if not _allowed(finding, allowlist):
+                        findings.append(finding)
             if len(findings) >= limit:
                 break
 

@@ -175,7 +175,40 @@ def _write_or_merge_config(config_dest: Path, upgrade: bool, report: InstallRepo
     report.add_path("updated", config_dest)
 
 
-def _managed_paths_for_profile(agent_profile: str) -> list[str]:
+def _write_or_merge_claude_settings(path: Path, report: InstallReport) -> None:
+    defaults = json.loads(read_template("claude-settings.json"))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        rendered = json.dumps(defaults, indent=2, sort_keys=True) + "\n"
+        path.write_text(rendered, encoding="utf-8")
+        report.add_path("created", path)
+        return
+    try:
+        current = json.loads(path.read_text(encoding="utf-8")) or {}
+    except json.JSONDecodeError:
+        backup = path.with_name(f"{path.name}.bak.{timestamp()}")
+        shutil.copy2(path, backup)
+        report.add_path("backed_up", backup)
+        current = {}
+    permissions = current.setdefault("permissions", {})
+    deny = permissions.setdefault("deny", [])
+    if not isinstance(deny, list):
+        deny = []
+        permissions["deny"] = deny
+    changed = False
+    for item in defaults.get("permissions", {}).get("deny", []):
+        if item not in deny:
+            deny.append(item)
+            changed = True
+    rendered = json.dumps(current, indent=2, sort_keys=True) + "\n"
+    if not changed and path.read_text(encoding="utf-8") == rendered:
+        report.add_path("preserved", path)
+        return
+    path.write_text(rendered, encoding="utf-8")
+    report.add_path("updated", path)
+
+
+def _managed_paths_for_profiles(agent_profiles: list[str]) -> list[str]:
     paths = [
         ".project-memory/config.yaml",
         ".project-memory/.gitignore",
@@ -186,14 +219,16 @@ def _managed_paths_for_profile(agent_profile: str) -> list[str]:
         "pmem.ps1",
         ".gitignore",
     ]
-    if agent_profile in {"codex", "multiagent"}:
+    profiles = set(agent_profiles)
+    if profiles & {"codex", "multiagent"}:
         paths.extend(["AGENTS.md", ".agents/skills/dependency-graph-rag/"])
-    if agent_profile == "multiagent":
-        paths.extend([".agents/roles/"])
-    if agent_profile in {"claude", "multiagent"}:
+    if profiles & {"multiagent"}:
+        paths.extend([".agents/roles/", ".agents/tasks/"])
+    if profiles & {"claude", "multiagent"}:
         paths.extend(
             [
                 "CLAUDE.md",
+                ".claude/settings.json",
                 ".claude/rules/project-memory.md",
                 ".claude/skills/dependency-graph-rag/",
                 ".claude/commands/pmem-context.md",
@@ -201,20 +236,35 @@ def _managed_paths_for_profile(agent_profile: str) -> list[str]:
                 ".claude/commands/pmem-audit.md",
             ]
         )
-    if agent_profile == "multiagent":
+    if profiles & {"multiagent"}:
         paths.extend([".claude/agents/"])
     return paths
+
+
+def _detect_installed_agent_profiles(root: Path, active_profile: str) -> list[str]:
+    profiles = {active_profile}
+    if (root / "AGENTS.md").exists() or (root / ".agents" / "skills" / "dependency-graph-rag").exists():
+        profiles.add("codex")
+    if (root / "CLAUDE.md").exists() or (root / ".claude" / "skills" / "dependency-graph-rag").exists():
+        profiles.add("claude")
+    if (root / ".agents" / "roles").exists() or (root / ".claude" / "agents").exists():
+        profiles.add("multiagent")
+    if "multiagent" in profiles:
+        profiles.update({"codex", "claude"})
+    return [item for item in ["codex", "claude", "multiagent"] if item in profiles]
 
 
 def _write_install_metadata(root: Path, report: InstallReport, operation: str, agent_profile: str) -> None:
     path = root / ".project-memory" / "install.json"
     previous = _read_install_metadata(root)
     now = _utc_now()
+    installed_profiles = _detect_installed_agent_profiles(root, agent_profile)
     data = {
         "package": "project-memory-kit",
         "installed_version": __version__,
         "runtime_version": __version__,
         "agent_profile": agent_profile,
+        "agent_profiles": installed_profiles,
         "config_schema_version": CONFIG_SCHEMA_VERSION,
         "graph_schema_version": GRAPH_SCHEMA_VERSION,
         "installed_at": previous.get("installed_at") or now,
@@ -222,7 +272,7 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str, a
         "previous_version": previous.get("runtime_version"),
         "last_operation": operation,
         "state_preserved": True,
-        "managed_paths": _managed_paths_for_profile(agent_profile),
+        "managed_paths": _managed_paths_for_profiles(installed_profiles),
         "knowledge_paths": [
             ".project-memory/knowledge/",
         ],
@@ -293,6 +343,7 @@ def _install_codex_profile(root: Path, report: InstallReport) -> None:
         full_template=read_template("AGENTS.full.md"),
     )
     _copy_project_memory_skill(root, root / ".agents", report)
+    copy_tree(template_path("agents-rules"), root / ".agents" / "rules", report)
 
 
 def _install_claude_profile(root: Path, report: InstallReport, include_multiagent: bool = False) -> None:
@@ -302,6 +353,7 @@ def _install_claude_profile(root: Path, report: InstallReport, include_multiagen
         report,
         full_template=read_template("CLAUDE.full.md"),
     )
+    _write_or_merge_claude_settings(root / ".claude" / "settings.json", report)
     write_managed_file(template_path("claude-rules.project-memory.md"), root / ".claude" / "rules" / "project-memory.md", report)
     copy_tree(template_path("claude-commands"), root / ".claude" / "commands", report)
     _copy_project_memory_skill(root, root / ".claude", report)
@@ -313,6 +365,7 @@ def _install_multiagent_profile(root: Path, report: InstallReport) -> None:
     _install_codex_profile(root, report)
     _install_claude_profile(root, report, include_multiagent=True)
     copy_tree(template_path("agents-roles"), root / ".agents" / "roles", report)
+    copy_tree(template_path("agents-tasks"), root / ".agents" / "tasks", report)
 
 
 def install_project(
@@ -340,6 +393,7 @@ def install_project(
 
     write_managed_file(template_path("project-memory.gitignore"), project_memory / ".gitignore", report)
     write_managed_file(template_path("README.project-memory.md"), project_memory / "README.md", report)
+    copy_tree(template_path("evals"), project_memory / "evals", report)
 
     merge_gitignore(root / ".gitignore", read_template("root.gitignore.block"), report)
     if agent_profile == "codex":
@@ -375,7 +429,10 @@ def uninstall_project(target: Path, purge: bool = False, keep_memory: bool = Tru
         root / "pmem",
         root / "pmem.ps1",
         root / ".agents" / "skills" / "dependency-graph-rag",
+        root / ".agents" / "rules",
         root / ".agents" / "roles",
+        root / ".agents" / "tasks" / "_templates",
+        root / ".agents" / "tasks" / "README.md",
         root / ".claude" / "rules" / "project-memory.md",
         root / ".claude" / "skills" / "dependency-graph-rag",
         root / ".claude" / "commands" / "pmem-context.md",

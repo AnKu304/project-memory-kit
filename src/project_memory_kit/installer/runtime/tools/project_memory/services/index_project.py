@@ -17,6 +17,7 @@ from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
 PYTHON_PARSER = PythonAstParser()
 JS_TS_PARSER = JsTsParser()
+NEXT_ROUTE_FILES = {"page", "layout", "route", "loading", "error", "not-found", "template", "default"}
 
 
 def _iter_files(root: Path, mode: str, store: SQLiteGraphStore | None = None) -> list[Path]:
@@ -65,6 +66,31 @@ def _language_for_path(path: Path) -> str | None:
     if path.suffix in JS_TS_EXTENSIONS:
         return js_ts_language_for_path(path)
     return None
+
+
+def _next_route_info(path: Path, rel: str) -> dict[str, str] | None:
+    if path.suffix not in JS_TS_EXTENSIONS or path.stem not in NEXT_ROUTE_FILES:
+        return None
+    parts = Path(rel).parts
+    try:
+        app_index = parts.index("app")
+    except ValueError:
+        return None
+    route_parts = []
+    for part in parts[app_index + 1 : -1]:
+        if part.startswith("(") and part.endswith(")"):
+            continue
+        route_parts.append(part)
+    route = "/" + "/".join(route_parts)
+    if route != "/":
+        route = route.rstrip("/")
+    route_kind = "api_route" if path.stem == "route" else "page_route"
+    return {
+        "framework": "next",
+        "route": route,
+        "route_kind": route_kind,
+        "route_file": path.name,
+    }
 
 
 def _target_for_name(name: str, symbols: list[Symbol], symbol_ids: dict[str, str]) -> str | None:
@@ -360,6 +386,18 @@ def index_project(root: Path, mode: str = "changed") -> str:
             hash=file_hash,
         )
         store.upsert_edge(project_id, file_id, "CONTAINS", evidence=rel)
+        route_info = _next_route_info(path, rel)
+        if route_info:
+            route_id = store.upsert_node(
+                kind="Route",
+                name=route_info["route"],
+                fqn=f"next:{route_info['route_kind']}:{route_info['route']}",
+                path=rel,
+                language=language,
+                layer="frontend",
+                properties=route_info,
+            )
+            store.upsert_edge(file_id, route_id, "DEFINES", confidence=0.9, evidence=route_info["route"])
 
         if parser is not None:
             result = parser.parse(root, path)

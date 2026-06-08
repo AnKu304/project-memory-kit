@@ -38,6 +38,7 @@ Claude profile adds:
 
 ```text
 CLAUDE.md
+.claude/settings.json
 .claude/rules/project-memory.md
 .claude/skills/dependency-graph-rag/
 .claude/commands/pmem-context.md
@@ -48,7 +49,9 @@ CLAUDE.md
 Multi-agent adds both instruction sets and role files:
 
 ```text
+.agents/rules/
 .agents/roles/
+.agents/tasks/
 .claude/agents/
 ```
 
@@ -129,6 +132,7 @@ Before editing:
 
 ```bash
 ./pmem doctor
+./pmem tasks check
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
@@ -186,6 +190,8 @@ Installed runtime:
 ./pmem audit --secrets
 ./pmem optimize
 ./pmem eval --file .project-memory/evals/search.jsonl
+./pmem tasks check
+./pmem tasks list
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
@@ -207,9 +213,11 @@ Installed runtime:
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
 ./pmem watch --once
+./pmem watch --interval 5 --max-runs 1
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
 ./pmem mcp-config --root .
+./pmem mcp-config --root . --client claude --write
 ```
 
 ## Local MCP
@@ -228,6 +236,7 @@ Print this snippet with:
 
 ```bash
 ./pmem mcp-config --root .
+./pmem mcp-config --root . --client claude --write
 ```
 
 Available MCP tools:
@@ -245,6 +254,7 @@ pmem_eval
 pmem_audit
 pmem_modules
 pmem_watch_status
+pmem_tasks
 pmem_knowledge_context
 pmem_knowledge_search
 pmem_knowledge_show
@@ -276,8 +286,11 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - If Qdrant/FastEmbed are not available, deterministic fallback keeps install and indexing usable.
 - The Python parser extracts modules, classes, functions, methods, imports, calls, inheritance, and docstrings.
 - The JS/TS parser extracts modules, classes, functions, methods, imports, exports, require, dynamic imports, calls, and JSX component references.
+- The JS/TS parser understands `tsconfig` aliases, workspace/package aliases, and Next.js app routes.
 - JS/TS uses a configurable backend. The default is `auto`: TypeScript compiler API when `node` and `typescript` are available in the project, otherwise the built-in lexical parser. `tree_sitter` and `lsp` are reserved optional backends without mandatory dependencies.
-- A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/knowledge/rationale tools over the same `pmem` runtime.
+- A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale tools over the same `pmem` runtime.
+- `tasks check` shows open handoff/user tasks from `.agents/tasks/`, so agents do not miss work left by another chat.
+- `mcp-config --client claude --write` can write `.mcp.json` while preserving existing settings.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
 
 ## Optional Modules
@@ -318,6 +331,7 @@ Run:
 
 Short version:
 
+- `0.9.0`: safe profile upgrades, workspace/package aliases for JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.
 - `0.8.0`: npm/npx distribution, `Codex`/`Claude`/`Multi-agent` profiles, Claude Code structure, CI, `audit --secrets`, `optimize`, `mcp-config`.
 - `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, new MCP tools, parser backend config.
 - `0.6.0`: BM25, auto-index, deleted-file cleanup, optional `human` module.

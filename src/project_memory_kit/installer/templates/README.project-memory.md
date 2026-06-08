@@ -34,6 +34,7 @@ Useful checks:
 ./pmem audit
 ./pmem audit --secrets
 ./pmem optimize
+./pmem tasks check
 ./pmem tests --base HEAD --explain
 ./pmem watch --once
 ```

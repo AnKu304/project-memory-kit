@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +21,7 @@ class InstallProfilesTest(unittest.TestCase):
             self.assertTrue((root / ".claude/rules/project-memory.md").exists())
             self.assertTrue((root / ".claude/skills/dependency-graph-rag/SKILL.md").exists())
             self.assertTrue((root / ".claude/commands/pmem-context.md").exists())
+            self.assertTrue((root / ".claude/settings.json").exists())
             self.assertFalse((root / ".claude/agents/pmem-coordinator.md").exists())
 
             metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
@@ -33,12 +36,15 @@ class InstallProfilesTest(unittest.TestCase):
             self.assertTrue((root / "AGENTS.md").exists())
             self.assertTrue((root / "CLAUDE.md").exists())
             self.assertTrue((root / ".agents/skills/dependency-graph-rag/SKILL.md").exists())
+            self.assertTrue((root / ".agents/rules/security.md").exists())
             self.assertTrue((root / ".agents/roles/README.md").exists())
+            self.assertTrue((root / ".agents/tasks/_templates/user-task.md").exists())
             self.assertTrue((root / ".claude/skills/dependency-graph-rag/SKILL.md").exists())
             self.assertTrue((root / ".claude/agents/pmem-coordinator.md").exists())
 
             metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["agent_profile"], "multiagent")
+            self.assertEqual(metadata["agent_profiles"], ["codex", "claude", "multiagent"])
             self.assertIn(".claude/agents/", metadata["managed_paths"])
 
     def test_universal_alias_maps_to_multiagent_profile(self) -> None:
@@ -47,6 +53,39 @@ class InstallProfilesTest(unittest.TestCase):
             install_project(root, agent="universal")
             metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
             self.assertEqual(metadata["agent_profile"], "multiagent")
+
+    def test_profile_upgrade_preserves_memory_and_tracks_installed_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "app.py").write_text("def saved():\n    return True\n", encoding="utf-8")
+            install_project(root, agent="codex")
+            subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            before = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                before_count = before.execute("SELECT count(*) FROM nodes").fetchone()[0]
+            finally:
+                before.close()
+
+            install_project(root, agent="claude", upgrade=True)
+
+            self.assertTrue((root / "AGENTS.md").exists())
+            self.assertTrue((root / "CLAUDE.md").exists())
+            metadata = json.loads((root / ".project-memory/install.json").read_text(encoding="utf-8"))
+            self.assertEqual(metadata["agent_profile"], "claude")
+            self.assertEqual(metadata["agent_profiles"], ["codex", "claude"])
+            after = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                after_count = after.execute("SELECT count(*) FROM nodes").fetchone()[0]
+            finally:
+                after.close()
+            self.assertEqual(before_count, after_count)
 
 
 if __name__ == "__main__":

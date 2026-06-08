@@ -91,6 +91,7 @@ def _alias_candidates(root: Path, specifier: str) -> list[Path]:
         tail = specifier[2:]
         candidates.append((root / "src" / tail).resolve())
         candidates.append((root / tail).resolve())
+    candidates.extend(_package_candidates(root, specifier))
     return candidates
 
 
@@ -135,6 +136,88 @@ def _read_project_config(root: Path) -> dict[str, Any]:
         except Exception:
             return {}
     return {}
+
+
+def _package_candidates(root: Path, specifier: str) -> list[Path]:
+    candidates: list[Path] = []
+    for package_root, name, exports in _workspace_packages(root):
+        if not name:
+            continue
+        if specifier == name:
+            candidates.extend(_entry_candidates(package_root, exports))
+            continue
+        prefix = name + "/"
+        if specifier.startswith(prefix):
+            tail = specifier[len(prefix) :]
+            candidates.append((package_root / tail).resolve())
+            candidates.append((package_root / "src" / tail).resolve())
+    return candidates
+
+
+def _entry_candidates(package_root: Path, exports: Any) -> list[Path]:
+    candidates = [package_root / "src" / "index", package_root / "index"]
+    target = _export_target(exports)
+    if target:
+        candidates.insert(0, package_root / target)
+    package_json = package_root / "package.json"
+    try:
+        data = json.loads(package_json.read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    for key in ("module", "main", "types"):
+        value = data.get(key)
+        if isinstance(value, str):
+            candidates.append(package_root / value)
+    return [candidate.resolve() for candidate in candidates]
+
+
+def _export_target(exports: Any) -> str | None:
+    if isinstance(exports, str):
+        return exports
+    if isinstance(exports, dict):
+        entry = exports.get(".") if "." in exports else exports
+        if isinstance(entry, str):
+            return entry
+        if isinstance(entry, dict):
+            for key in ("import", "default", "require", "types"):
+                value = entry.get(key)
+                if isinstance(value, str):
+                    return value
+    return None
+
+
+@lru_cache(maxsize=32)
+def _workspace_packages(root: Path) -> tuple[tuple[Path, str, Any], ...]:
+    packages: list[tuple[Path, str, Any]] = []
+    root_package = _read_package_json(root / "package.json")
+    if root_package:
+        packages.append((root, str(root_package.get("name") or ""), root_package.get("exports")))
+    for pattern in _workspace_patterns(root_package):
+        for package_json in sorted(root.glob(pattern.rstrip("/") + "/package.json")):
+            package_root = package_json.parent
+            data = _read_package_json(package_json)
+            if data:
+                packages.append((package_root, str(data.get("name") or ""), data.get("exports")))
+    return tuple(packages)
+
+
+def _workspace_patterns(package_data: dict[str, Any]) -> list[str]:
+    raw = package_data.get("workspaces", []) if package_data else []
+    if isinstance(raw, dict):
+        raw = raw.get("packages", [])
+    if isinstance(raw, str):
+        raw = [raw]
+    return [str(item) for item in raw if isinstance(item, str)]
+
+
+def _read_package_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(_strip_json_comments(path.read_text(encoding="utf-8", errors="replace")))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _strip_json_comments(text: str) -> str:

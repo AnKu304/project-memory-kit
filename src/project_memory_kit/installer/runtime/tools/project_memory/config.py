@@ -92,6 +92,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "secrets": {
             "max_file_bytes": 1_000_000,
             "max_findings": 100,
+            "entropy_threshold": 4.2,
+            "allowlist": [],
         },
     },
     "modules": {

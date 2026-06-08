@@ -43,6 +43,7 @@ Run:
 ```bash
 ./pmem doctor
 ./pmem status
+./pmem tasks check
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<user task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md

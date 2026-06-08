@@ -18,6 +18,7 @@ from tools.project_memory.services.modules import format_module_states, module_s
 from tools.project_memory.services.rationale import build_rationale_context, search_rationale, show_rationale
 from tools.project_memory.services.search import search as search_service
 from tools.project_memory.services.status import format_stale, format_status, project_status
+from tools.project_memory.services.tasks import format_tasks, list_tasks
 from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.version import __version__
 
@@ -174,6 +175,17 @@ TOOLS: list[dict[str, Any]] = [
         "Watch status",
         "Return local watch/index freshness status without starting a long-running process.",
         _schema(),
+    ),
+    _tool(
+        "pmem_tasks",
+        "List active project tasks",
+        "Return active multi-agent task handoffs from .agents/tasks.",
+        _schema(
+            {
+                "role": {"type": "string"},
+                "all": {"type": "boolean", "default": False},
+            }
+        ),
     ),
     _tool(
         "pmem_knowledge_context",
@@ -396,6 +408,13 @@ def _tool_watch_status(root: Path, _: dict[str, Any]) -> dict[str, Any]:
     return _text_result(format_stale(root), {"index": report["index"]})
 
 
+def _tool_tasks(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    role = str(args.get("role") or "").strip() or None
+    include_closed = bool(args.get("all"))
+    tasks = list_tasks(root, include_closed=include_closed, role=role)
+    return _text_result(format_tasks(tasks), {"tasks": [item.__dict__ for item in tasks]})
+
+
 def _tool_knowledge_context(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     task = str(args.get("task") or "").strip()
     if not task:
@@ -475,6 +494,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "pmem_audit": _tool_audit,
     "pmem_modules": _tool_modules,
     "pmem_watch_status": _tool_watch_status,
+    "pmem_tasks": _tool_tasks,
     "pmem_knowledge_context": _tool_knowledge_context,
     "pmem_knowledge_search": _tool_knowledge_search,
     "pmem_knowledge_show": _tool_knowledge_show,

@@ -8,6 +8,7 @@ The memory system is installed in:
 .project-memory/
 tools/project_memory/
 .agents/skills/dependency-graph-rag/
+.agents/rules/
 ```
 
 If the local MCP server is configured, use the equivalent `pmem_*` tools for bounded context, search, impact, tests, knowledge, and rationale. The CLI commands below remain the fallback and verification baseline.
@@ -23,6 +24,12 @@ Before any meaningful code, config, schema, dependency, API, test, build, routin
 ```
 
 Read `.project-memory/reports/CHANGE_CONTEXT.md` before editing. Identify target files, target symbols, direct dependencies, reverse dependencies, affected tests, related previous failures, architecture constraints, and low-confidence graph areas.
+
+If `.agents/tasks/` exists, check active user tasks and handoffs before starting:
+
+```bash
+./pmem tasks check
+```
 
 Keep context bounded. Use local tools to inspect large files, logs, reports, and test output. Bring only relevant findings, short excerpts, ids, and paths into the working context. Open full files, full knowledge/rationale notes, or long logs only when local summaries are insufficient.
 
@@ -98,5 +105,7 @@ mkdir -p .project-memory/logs
 Final responses after code changes must include files changed, symbols changed, impact checked, tests run, knowledge/rationale updates if any, failure memory updates, and remaining risk.
 
 External skills may also exist in `.agents/skills/`. Use them when relevant, but they do not replace this mandatory project-memory protocol.
+
+Additional project rules may exist in `.agents/rules/`.
 
 Never index, print, or store secrets.

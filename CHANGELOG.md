@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.9.0
+
+Added:
+
+- `.agents/tasks/` templates for user tasks and agent-to-agent handoff tasks.
+- `./pmem tasks check` and `./pmem tasks list` for active multi-agent task checks.
+- MCP tool `pmem_tasks`.
+- Claude MCP config writer through `./pmem mcp-config --client claude --write`.
+- Secret audit detection for JWT-like tokens and high-entropy assigned values.
+- Secret audit allowlist support through `.project-memory/config.yaml`.
+- JS/TS workspace/package alias resolution for imports such as `@acme/ui/button`.
+- Next.js app route metadata during indexing.
+- Eval fixture templates under `.project-memory/evals/`.
+- Claude project security settings template in `.claude/settings.json`.
+- Quality guard tests for version sync, README/CHANGELOG sync, and config schema sync.
+
+Updated:
+
+- Upgrade can add a new profile while preserving already installed profiles and memory databases.
+- Installer metadata now records `agent_profiles` and managed paths.
+- Multi-agent profile now includes shared rules and task templates.
+- `./pmem watch` can run as a bounded loop with `--interval` and `--max-runs`.
+- Config schema is now `7` and audit settings include entropy threshold and allowlist.
+- Agent instructions now tell agents to check active tasks before editing.
+
+Removed:
+
+- Nothing.
+
+Better than 0.8.0:
+
+- Upgrades are safer when moving from Codex-only to Claude or multi-agent.
+- JS/TS/Next projects get better dependency and route context before edits.
+- Multi-chat projects have a local task surface instead of relying only on chat history.
+- MCP setup is less manual for Claude-compatible clients.
+- Secret checks are more useful and less noisy.
+
 ## 0.8.0
 
 Added:

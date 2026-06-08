@@ -38,6 +38,7 @@ Claude-профиль добавляет:
 
 ```text
 CLAUDE.md
+.claude/settings.json
 .claude/rules/project-memory.md
 .claude/skills/dependency-graph-rag/
 .claude/commands/pmem-context.md
@@ -48,7 +49,9 @@ CLAUDE.md
 Multi-agent добавляет оба набора инструкций и роли:
 
 ```text
+.agents/rules/
 .agents/roles/
+.agents/tasks/
 .claude/agents/
 ```
 
@@ -129,6 +132,7 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 
 ```bash
 ./pmem doctor
+./pmem tasks check
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
@@ -186,6 +190,8 @@ pmem version
 ./pmem audit --secrets
 ./pmem optimize
 ./pmem eval --file .project-memory/evals/search.jsonl
+./pmem tasks check
+./pmem tasks list
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
@@ -207,9 +213,11 @@ pmem version
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
 ./pmem watch --once
+./pmem watch --interval 5 --max-runs 1
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
 ./pmem mcp-config --root .
+./pmem mcp-config --root . --client claude --write
 ```
 
 ## Локальный MCP
@@ -228,6 +236,7 @@ args = ["mcp", "--root", "/absolute/path/to/repo"]
 
 ```bash
 ./pmem mcp-config --root .
+./pmem mcp-config --root . --client claude --write
 ```
 
 Доступные MCP tools:
@@ -245,6 +254,7 @@ pmem_eval
 pmem_audit
 pmem_modules
 pmem_watch_status
+pmem_tasks
 pmem_knowledge_context
 pmem_knowledge_search
 pmem_knowledge_show
@@ -276,8 +286,11 @@ MCP удобен для коротких structured-ответов агенту.
 - Если Qdrant/FastEmbed недоступны, включается deterministic fallback, чтобы установка и индексирование не ломались.
 - Python parser извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings.
 - JS/TS parser извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references.
+- JS/TS parser понимает `tsconfig` aliases, workspace/package aliases и Next.js app routes.
 - Для JS/TS используется настраиваемый backend. По умолчанию `auto`: TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе встроенный lexical parser. `tree_sitter` и `lsp` зарезервированы как optional backends без обязательных зависимостей.
-- Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/knowledge/rationale поверх того же `pmem` runtime.
+- Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale поверх того же `pmem` runtime.
+- `tasks check` показывает открытые handoff/user tasks из `.agents/tasks/`, чтобы агент не пропускал задачи от других чатов.
+- `mcp-config --client claude --write` может записать `.mcp.json`, сохранив существующие настройки.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
 
 ## Optional Modules
@@ -318,6 +331,7 @@ modules:
 
 Кратко:
 
+- `0.9.0`: безопасное добавление профилей при upgrade, workspace/package aliases для JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.
 - `0.8.0`: npm/npx distribution, профили `Codex`/`Claude`/`Multi-agent`, Claude Code структура, CI, `audit --secrets`, `optimize`, `mcp-config`.
 - `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, новые MCP tools, parser backend config.
 - `0.6.0`: BM25, auto-index, cleanup удаленных файлов, optional `human` module.

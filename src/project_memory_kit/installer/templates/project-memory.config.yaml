@@ -1,4 +1,4 @@
-version: 2
+version: 3
 project:
   name: auto
 paths:
@@ -91,6 +91,8 @@ audit:
   secrets:
     max_file_bytes: 1000000
     max_findings: 100
+    entropy_threshold: 4.2
+    allowlist: []
 modules:
   human:
     enabled: false

@@ -1,0 +1,3 @@
+# {"id":"payment-validation-file","query":"payment validation","expect_path":"src/payments.py"}
+# {"id":"product-page-seo","query":"product page SEO rules","layer":"knowledge","expect_text":"canonical"}
+# {"id":"storage-rationale","query":"why sqlite source of truth","layer":"rationale","expect_text":"local-first"}

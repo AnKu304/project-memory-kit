@@ -226,6 +226,76 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("[mcp_servers.project_memory]", mcp_config.stdout)
             self.assertIn(str(root / "pmem"), mcp_config.stdout)
 
+            write_mcp = subprocess.run(
+                [str(root / "pmem"), "mcp-config", "--client", "claude", "--write"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(write_mcp.returncode, 0, write_mcp.stderr)
+            mcp_json = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))
+            self.assertIn("project_memory", mcp_json["mcpServers"])
+
+    def test_secret_allowlist_entropy_watch_loop_and_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root, agent="multiagent")
+            (root / "token.txt").write_text(
+                'client_secret = "aZ9qLm82Pq7Vr4St1Nx6Yp3Kd8Qw5Er2"\n',
+                encoding="utf-8",
+            )
+            audit = subprocess.run(
+                [str(root / "pmem"), "audit", "--secrets"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(audit.returncode, 1, audit.stderr)
+            self.assertIn("high_entropy_secret", audit.stdout)
+            fingerprint = audit.stdout.rsplit(" ", 1)[-1].strip()
+
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8") + f"\naudit:\n  secrets:\n    allowlist:\n      - {fingerprint}\n",
+                encoding="utf-8",
+            )
+            allowed = subprocess.run(
+                [str(root / "pmem"), "audit", "--secrets"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+
+            task = root / ".agents/tasks/frontend-review.md"
+            task.write_text(
+                "# Review header / Проверка\n\nType: handoff\nStatus: active\nRole: reviewer\n",
+                encoding="utf-8",
+            )
+            tasks = subprocess.run(
+                [str(root / "pmem"), "tasks", "check", "--role", "reviewer"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(tasks.returncode, 0, tasks.stderr)
+            self.assertIn("Review header", tasks.stdout)
+            self.assertNotIn("Agent Tasks", tasks.stdout)
+
+            watch = subprocess.run(
+                [str(root / "pmem"), "watch", "--interval", "0", "--max-runs", "1"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(watch.returncode, 0, watch.stderr)
+            self.assertIn("watch check", watch.stdout)
+
     def test_modules_command_enables_optional_human_layer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

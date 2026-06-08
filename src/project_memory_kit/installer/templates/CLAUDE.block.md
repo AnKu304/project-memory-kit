@@ -28,6 +28,12 @@ Before meaningful edits, run:
 
 Read `.project-memory/reports/CHANGE_CONTEXT.md` before editing. Keep context bounded: inspect large files, logs, and reports locally, then bring only relevant findings, short excerpts, ids, and paths into the working context.
 
+If `.agents/tasks/` exists, check active user tasks and handoffs before starting:
+
+```bash
+./pmem tasks check
+```
+
 For research, architecture, SEO, design, UX, product, content, or principle-heavy work, also run:
 
 ```bash
