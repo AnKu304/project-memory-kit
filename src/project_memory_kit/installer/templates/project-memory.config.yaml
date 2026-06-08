@@ -1,4 +1,4 @@
-version: 3
+version: 4
 project:
   name: auto
 paths:
@@ -96,6 +96,10 @@ audit:
 modules:
   human:
     enabled: false
+integrations:
+  linear:
+    enabled: false
+    bridge_dir: .project-memory/linear
 vector:
   backend: auto
   collection: project_memory_chunks

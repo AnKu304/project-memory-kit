@@ -193,6 +193,9 @@ pmem version
 ./pmem tasks check
 ./pmem tasks list
 ./pmem tasks close --file .agents/tasks/example.md --summary "Done"
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
 ./pmem human status
 ./pmem human export
 ./pmem human sync
@@ -225,6 +228,9 @@ pmem version
 ./pmem mcp --root .
 ./pmem mcp-config --root .
 ./pmem mcp-config --root . --client claude --write
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
 ```
 
 ## Локальный MCP
@@ -302,6 +308,7 @@ MCP удобен для коротких structured-ответов агенту.
 - Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale поверх того же `pmem` runtime.
 - `tasks check` показывает открытые handoff/user tasks из `.agents/tasks/`, чтобы агент не пропускал задачи от других чатов.
 - `tasks close` закрывает task-файл, добавляет completion block и переиндексирует измененную задачу.
+- `tasks linear` работает как локальный bridge для Linear: экспортирует `.agents/tasks/` в JSON и импортирует issues обратно в task-файлы.
 - `human` module создает Obsidian-like Markdown layer поверх current knowledge/rationale: `.project-memory/human/index.md`, generated notes, `graph.mmd` и `graph.json`.
 - `search --layer human` ищет по generated human notes.
 - `mcp-config --client claude --write` может записать `.mcp.json`, сохранив существующие настройки.
@@ -333,6 +340,20 @@ Human layer нужен, если хочется человекочитаемую
 
 `human sync` подтягивает ручные правки из generated Human notes обратно в `knowledge` или `rationale`. Если Human note и исходная запись изменились после последнего export, команда показывает conflict и не перезаписывает данные молча.
 
+## Linear Sync
+
+Синхронизация задач с Linear
+
+Linear bridge выключен по умолчанию и не требует Linear SDK. `.agents/tasks/` остается локальным источником задач, а `.project-memory/linear/*.json` используется как обменный файл для Linear plugin, MCP или ручной синхронизации.
+
+```bash
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
+```
+
+Импорт создает или обновляет Markdown-задачи в `.agents/tasks/linear/` и переиндексирует их, чтобы другие чаты увидели задачи через `./pmem tasks check`.
+
 ## Memory Evals
 
 Локальные evals лежат в `.project-memory/evals/*.jsonl`.
@@ -353,6 +374,7 @@ Human layer нужен, если хочется человекочитаемую
 
 Кратко:
 
+- `0.13.0`: Linear Sync; локальный bridge для экспорта/импорта задач Linear без обязательных зависимостей.
 - `0.12.0`: Bidirectional Human Sync; двусторонняя синхронизация Human-слоя с conflict detection.
 - `0.11.0`: Human/Obsidian-like layer, `human export/sync/search/graph`, `search --layer human`, MCP human tools, `tasks close`.
 - `0.10.0`: npm package smoke, tarball validation, `prepack`, строгий package `files`, проверка Python 3.11+ в Node wrapper, npm distribution guide.

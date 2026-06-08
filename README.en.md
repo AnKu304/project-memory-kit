@@ -193,6 +193,9 @@ Installed runtime:
 ./pmem tasks check
 ./pmem tasks list
 ./pmem tasks close --file .agents/tasks/example.md --summary "Done"
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
 ./pmem human status
 ./pmem human export
 ./pmem human sync
@@ -225,6 +228,9 @@ Installed runtime:
 ./pmem mcp --root .
 ./pmem mcp-config --root .
 ./pmem mcp-config --root . --client claude --write
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
 ```
 
 ## Local MCP
@@ -302,6 +308,7 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale tools over the same `pmem` runtime.
 - `tasks check` shows open handoff/user tasks from `.agents/tasks/`, so agents do not miss work left by another chat.
 - `tasks close` closes a task file, appends a completion block, and re-indexes the changed task.
+- `tasks linear` is a local Linear bridge: it exports `.agents/tasks/` to JSON and imports issues back into task files.
 - The `human` module creates an Obsidian-like Markdown layer over current knowledge/rationale: `.project-memory/human/index.md`, generated notes, `graph.mmd`, and `graph.json`.
 - `search --layer human` searches generated human notes.
 - `mcp-config --client claude --write` can write `.mcp.json` while preserving existing settings.
@@ -333,6 +340,20 @@ The Human layer is for a human-readable Obsidian-like view over project memory. 
 
 `human sync` pulls manual edits from generated Human notes back into `knowledge` or `rationale`. If both the Human note and the source record changed after the last export, the command reports a conflict instead of overwriting data silently.
 
+## Linear Sync
+
+Task synchronization with Linear
+
+The Linear bridge is disabled by default and does not require the Linear SDK. `.agents/tasks/` remains the local task source, while `.project-memory/linear/*.json` acts as an exchange file for the Linear plugin, MCP, or manual sync.
+
+```bash
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
+```
+
+Import creates or updates Markdown tasks in `.agents/tasks/linear/` and re-indexes them so other chats see the tasks through `./pmem tasks check`.
+
 ## Memory Evals
 
 Local evals live in `.project-memory/evals/*.jsonl`.
@@ -353,6 +374,7 @@ Run:
 
 Short version:
 
+- `0.13.0`: Linear Sync; local export/import bridge for Linear tasks without mandatory dependencies.
 - `0.12.0`: Bidirectional Human Sync; two-way Human layer sync with conflict detection.
 - `0.11.0`: Human/Obsidian-like layer, `human export/sync/search/graph`, `search --layer human`, MCP human tools, `tasks close`.
 - `0.10.0`: npm package smoke, tarball validation, `prepack`, strict package `files`, Python 3.11+ check in the Node wrapper, npm distribution guide.

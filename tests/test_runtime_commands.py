@@ -365,6 +365,97 @@ class RuntimeCommandsTest(unittest.TestCase):
                 conn.close()
             self.assertIsNotNone(row)
 
+    def test_tasks_linear_bridge_exports_imports_and_indexes_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root, agent="multiagent")
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            task = root / ".agents/tasks/frontend-review.md"
+            task.write_text(
+                "# Review Product Card\n\nType: handoff\nStatus: active\nRole: reviewer\n",
+                encoding="utf-8",
+            )
+
+            status = subprocess.run(
+                [str(root / "pmem"), "tasks", "linear", "status"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertIn("Linear bridge", status.stdout)
+            self.assertIn("config: disabled", status.stdout)
+            self.assertIn("local_tasks: 1", status.stdout)
+
+            export_path = root / ".project-memory/linear/tasks-export.json"
+            exported = subprocess.run(
+                [str(root / "pmem"), "tasks", "linear", "export", "--out", str(export_path)],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            self.assertIn("Linear export", exported.stdout)
+            export_data = json.loads(export_path.read_text(encoding="utf-8"))
+            self.assertEqual(export_data["schema"], "pmem-linear-bridge-v1")
+            self.assertEqual(export_data["tasks"][0]["path"], ".agents/tasks/frontend-review.md")
+
+            import_path = root / ".project-memory/linear/issues.json"
+            import_path.write_text(
+                json.dumps(
+                    {
+                        "issues": [
+                            {
+                                "identifier": "LIN-1",
+                                "title": "Imported Linear Task",
+                                "state": "open",
+                                "role": "reviewer",
+                                "url": "https://linear.app/example/issue/LIN-1",
+                                "description": "Review imported task before frontend work.",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            imported = subprocess.run(
+                [str(root / "pmem"), "tasks", "linear", "import", "--file", str(import_path)],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(imported.returncode, 0, imported.stderr)
+            self.assertIn("Linear import", imported.stdout)
+            imported_task = root / ".agents/tasks/linear/lin-1-imported-linear-task.md"
+            self.assertTrue(imported_task.exists())
+            self.assertIn("Linear ID: LIN-1", imported_task.read_text(encoding="utf-8"))
+
+            tasks = subprocess.run(
+                [str(root / "pmem"), "tasks", "check", "--role", "reviewer"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(tasks.returncode, 0, tasks.stderr)
+            self.assertIn("Imported Linear Task", tasks.stdout)
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute(
+                    "SELECT hash FROM file_index_state WHERE path = '.agents/tasks/linear/lin-1-imported-linear-task.md'"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertIsNotNone(row)
+
     def test_modules_command_enables_optional_human_layer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

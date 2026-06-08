@@ -60,6 +60,13 @@ from tools.project_memory.services.rationale import (
 from tools.project_memory.services.search import format_search_result, search as search_service
 from tools.project_memory.services.status import format_stale, format_status, project_status
 from tools.project_memory.services.tasks import close_task, format_tasks, list_tasks
+from tools.project_memory.services.tasks_linear import (
+    export_linear_tasks,
+    format_linear_report,
+    format_linear_status,
+    import_linear_tasks,
+    linear_status,
+)
 from tools.project_memory.services.auto_index import ensure_fresh_index
 from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.version import __version__
@@ -369,6 +376,16 @@ def command_tasks(args: argparse.Namespace) -> int:
             item = close_task(root(), args.file, args.summary, command=args.command)
             print(f"task closed: {item.path}")
             return 0
+        if args.tasks_command == "linear":
+            if args.linear_command == "status":
+                print(format_linear_status(linear_status(root())), end="")
+                return 0
+            if args.linear_command == "export":
+                print(format_linear_report("export", export_linear_tasks(root(), out=args.out)), end="")
+                return 0
+            if args.linear_command == "import":
+                print(format_linear_report("import", import_linear_tasks(root(), args.file)), end="")
+                return 0
     except (FileNotFoundError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

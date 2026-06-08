@@ -146,6 +146,20 @@ def add_tasks_parser(sub: argparse._SubParsersAction, handler: CommandHandler) -
     t.add_argument("--command")
     t.set_defaults(func=handler)
 
+    t = tasks_sub.add_parser("linear")
+    linear_sub = t.add_subparsers(dest="linear_command", required=True)
+
+    l = linear_sub.add_parser("status")
+    l.set_defaults(func=handler)
+
+    l = linear_sub.add_parser("export")
+    l.add_argument("--out")
+    l.set_defaults(func=handler)
+
+    l = linear_sub.add_parser("import")
+    l.add_argument("--file", required=True)
+    l.set_defaults(func=handler)
+
 
 def add_human_parser(sub: argparse._SubParsersAction, handler: CommandHandler) -> None:
     p = sub.add_parser("human")

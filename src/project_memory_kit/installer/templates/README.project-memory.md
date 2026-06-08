@@ -35,6 +35,7 @@ Useful checks:
 ./pmem audit --secrets
 ./pmem optimize
 ./pmem tasks check
+./pmem tasks linear status
 ./pmem human status
 ./pmem tests --base HEAD --explain
 ./pmem watch --once
@@ -62,6 +63,16 @@ When enabled, Human export creates an Obsidian-like Markdown view over current k
 
 Generated files include `human/index.md`, `human/knowledge/**/*.md`, `human/rationale/**/*.md`, `human/graph.mmd`, and `human/graph.json`.
 `human sync` can pull manual edits from generated Human notes back into source memory records, and it reports conflicts when both sides changed.
+
+Linear bridge is available without extra runtime dependencies:
+
+```bash
+./pmem tasks linear status
+./pmem tasks linear export --out .project-memory/linear/tasks-export.json
+./pmem tasks linear import --file .project-memory/linear/issues.json
+```
+
+Imported issues become Markdown tasks under `.agents/tasks/linear/` and are indexed for `tasks check`.
 
 Commit:
 

@@ -288,6 +288,7 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str, a
         "state_paths": [
             ".project-memory/install.json",
             ".project-memory/graph.sqlite",
+            ".project-memory/linear/",
             ".project-memory/qdrant/",
             ".project-memory/runtime/",
             ".project-memory/logs/",

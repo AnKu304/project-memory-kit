@@ -101,6 +101,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "enabled": False,
         },
     },
+    "integrations": {
+        "linear": {
+            "enabled": False,
+            "bridge_dir": ".project-memory/linear",
+        },
+    },
     "vector": {
         "backend": "auto",
         "collection": "project_memory_chunks",

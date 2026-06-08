@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.13.0
+
+Added:
+
+- Linear Sync.
+- Синхронизация задач с Linear.
+- `./pmem tasks linear status`, `export`, and `import`.
+- Optional `integrations.linear` config with a local bridge directory.
+- JSON bridge format for exporting `.agents/tasks/` and importing Linear issues back into Markdown task files.
+
+Updated:
+
+- Imported Linear tasks are written under `.agents/tasks/linear/` and re-indexed automatically.
+- Installer metadata now lists `.project-memory/linear/` as preserved local state.
+
+Removed:
+
+- Nothing.
+
+Better than 0.12.0:
+
+- Multi-chat task coordination can now connect to Linear without adding a required Linear API dependency.
+- `.agents/tasks/` stays usable as the local source of truth when Linear is not configured.
+
 ## 0.12.0
 
 Added:
