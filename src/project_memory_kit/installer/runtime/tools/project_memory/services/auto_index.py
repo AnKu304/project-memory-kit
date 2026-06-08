@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,6 +82,38 @@ def auto_index_enabled(root: Path, command: str) -> bool:
     return command in {str(item) for item in commands}
 
 
+def index_lock_path(root: Path) -> Path:
+    return config_path(root, "cache_dir") / "index.lock"
+
+
+def index_locked(root: Path) -> bool:
+    return index_lock_path(root).exists()
+
+
+class IndexLock:
+    def __init__(self, root: Path):
+        self.path = index_lock_path(root)
+        self.acquired = False
+
+    def __enter__(self) -> "IndexLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            return self
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(str(os.getpid()))
+        self.acquired = True
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        if self.acquired:
+            try:
+                self.path.unlink()
+            except FileNotFoundError:
+                pass
+
+
 def ensure_fresh_index(root: Path, command: str) -> str | None:
     if not auto_index_enabled(root, command):
         return None
@@ -93,9 +126,13 @@ def ensure_fresh_index(root: Path, command: str) -> str | None:
     if mode not in {"changed", "full"}:
         mode = "changed"
 
-    from tools.project_memory.services.index_project import index_project
+    with IndexLock(root) as lock:
+        if not lock.acquired:
+            return f"auto-index before {command}: skipped because index.lock exists"
 
-    report = index_project(root, mode=mode)
+        from tools.project_memory.services.index_project import index_project
+
+        report = index_project(root, mode=mode)
     sample = ", ".join(freshness.sample)
     reason = (
         f"auto-index before {command}: missing={freshness.missing_files} "

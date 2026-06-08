@@ -2,6 +2,8 @@
 
 Russian version: [README.md](README.md)
 
+Version changes: [CHANGELOG.md](CHANGELOG.md)
+
 `project-memory-kit` adds local project memory for coding agents.
 
 The memory lives inside the repository, so several chats can work on the same project without losing context. Agents can inspect files, symbols, imports, reverse dependencies, relevant tests, previous failures, and durable project principles before editing.
@@ -17,6 +19,7 @@ AGENTS.md
 .project-memory/install.json
 .project-memory/knowledge/
 .project-memory/rationale/
+.project-memory/evals/
 tools/project_memory/
 pmem
 pmem.ps1
@@ -115,6 +118,8 @@ Installed runtime:
 ```bash
 ./pmem version
 ./pmem doctor
+./pmem status
+./pmem stale
 ./pmem migrate
 ./pmem modules list
 ./pmem modules set human --enabled true
@@ -123,22 +128,29 @@ Installed runtime:
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "task description"
+./pmem audit
+./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
+./pmem knowledge conflicts
 ./pmem knowledge context --task "redesign product page"
 ./pmem knowledge show --id resource-mechanics
 ./pmem knowledge retire --id old-design-rules
 ./pmem rationale add --type decision --title "Use SQLite" --file notes/rationale/sqlite.md
 ./pmem rationale update --id use-sqlite --file notes/rationale/sqlite.md
 ./pmem rationale search --query "why not postgres"
+./pmem rationale conflicts
 ./pmem rationale context --task "change memory database"
 ./pmem rationale show --id use-sqlite
 ./pmem rationale retire --id old-storage-choice
 ./pmem tests --base HEAD
+./pmem tests --base HEAD --explain
 ./pmem search --query "payment validation" --limit 10
+./pmem search --query "payment validation" --limit 10 --debug
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
+./pmem watch --once
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
 ```
@@ -160,10 +172,16 @@ Available MCP tools:
 ```text
 pmem_doctor
 pmem_index
+pmem_status
 pmem_context
 pmem_impact
 pmem_tests
 pmem_search
+pmem_search_debug
+pmem_eval
+pmem_audit
+pmem_modules
+pmem_watch_status
 pmem_knowledge_context
 pmem_knowledge_search
 pmem_knowledge_show
@@ -183,16 +201,18 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - Knowledge search uses only `current` records by default. When a principle changes, `knowledge update` keeps one current record instead of creating a competing copy.
 - The rationale layer stores verified causes: decisions, rejected alternatives, experiments, invariants, and evidence.
 - Full rationale records live in `.project-memory/rationale/**/*.md`; context receives only short snippets, ids, score/reason, and paths to full records.
-- SQLite FTS5 `bm25()` ranks keyword results. Vector search is added on top when Qdrant/FastEmbed are available.
+- Hybrid search combines SQLite FTS5 `bm25()`, vector score, term coverage, path matches, graph proximity, confidence, layer, and recency.
+- `./pmem search --debug` shows ranking components.
 - `search`, `context`, `impact`, and `tests` automatically run a local `changed` index when the database is empty or stale.
+- `status`, `stale`, `audit`, `eval`, `tests --explain`, and `watch --once` help check memory quality locally.
 - Full records are opened only when needed.
 - Edges have `confidence`; more exact bindings receive higher scores.
 - Qdrant local + FastEmbed provide semantic search when available.
 - If Qdrant/FastEmbed are not available, deterministic fallback keeps install and indexing usable.
 - The Python parser extracts modules, classes, functions, methods, imports, calls, inheritance, and docstrings.
 - The JS/TS parser extracts modules, classes, functions, methods, imports, exports, require, dynamic imports, calls, and JSX component references.
-- JS/TS uses the TypeScript compiler API when `node` and `typescript` are available in the project; otherwise it uses the built-in lexical parser.
-- A local MCP server exposes doctor/index/context/impact/search/tests/knowledge/rationale tools over the same `pmem` runtime.
+- JS/TS uses a configurable backend. The default is `auto`: TypeScript compiler API when `node` and `typescript` are available in the project, otherwise the built-in lexical parser. `tree_sitter` and `lsp` are reserved optional backends without mandatory dependencies.
+- A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/knowledge/rationale tools over the same `pmem` runtime.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
 
 ## Optional Modules
@@ -212,6 +232,32 @@ modules:
 ./pmem modules set human --enabled true
 ./pmem modules set human --enabled false
 ```
+
+## Memory Evals
+
+Local evals live in `.project-memory/evals/*.jsonl`.
+
+Example line:
+
+```json
+{"query":"payment validation","expect_path":"src/payments.py"}
+```
+
+Run:
+
+```bash
+./pmem eval --file .project-memory/evals/search.jsonl
+```
+
+## Version Updates
+
+Short version:
+
+- `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, new MCP tools, parser backend config.
+- `0.6.0`: BM25, auto-index, deleted-file cleanup, optional `human` module.
+- `0.5.0`: local MCP server.
+
+Full list: [CHANGELOG.md](CHANGELOG.md)
 
 ## Knowledge Layer
 

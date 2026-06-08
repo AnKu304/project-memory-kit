@@ -6,13 +6,16 @@ from pathlib import Path
 
 from tools.project_memory.services.context_builder import write_context
 from tools.project_memory.services.doctor import doctor as doctor_service
+from tools.project_memory.services.eval_runner import format_eval, run_eval
 from tools.project_memory.services.failure_memory import record_failure
+from tools.project_memory.services.governance import audit_project, format_audit
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.init_memory import init_memory
 from tools.project_memory.services.knowledge import (
     add_knowledge,
     build_knowledge_context,
+    knowledge_conflict_count,
     retire_knowledge,
     search_knowledge,
     show_knowledge,
@@ -25,14 +28,17 @@ from tools.project_memory.services.modules import format_module_states, set_modu
 from tools.project_memory.services.rationale import (
     add_rationale,
     build_rationale_context,
+    rationale_conflict_count,
     retire_rationale,
     search_rationale,
     show_rationale,
     update_rationale,
     write_rationale_context,
 )
-from tools.project_memory.services.search import search as search_service
-from tools.project_memory.services.test_selector import select_tests
+from tools.project_memory.services.search import format_search_result, search as search_service
+from tools.project_memory.services.status import format_stale, format_status, project_status
+from tools.project_memory.services.auto_index import ensure_fresh_index
+from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.version import __version__
 
 
@@ -49,6 +55,11 @@ def command_doctor(_: argparse.Namespace) -> int:
     ok, report = doctor_service(root())
     print(report)
     return 0 if ok else 1
+
+
+def command_status(args: argparse.Namespace) -> int:
+    print(format_status(project_status(root()), args.format), end="")
+    return 0
 
 
 def command_index(args: argparse.Namespace) -> int:
@@ -72,6 +83,9 @@ def command_context(args: argparse.Namespace) -> int:
 
 
 def command_tests(args: argparse.Namespace) -> int:
+    if args.explain:
+        print(explain_tests(root(), args.base), end="")
+        return 0
     for command in select_tests(root(), args.base):
         print(command)
     return 0
@@ -87,12 +101,38 @@ def command_record_failure(args: argparse.Namespace) -> int:
 
 
 def command_search(args: argparse.Namespace) -> int:
-    for item in search_service(root(), args.query, args.limit, layer=args.layer):
-        print(
-            f"{item['path']} {item['fqn']} "
-            f"[{item.get('source', 'local')} {float(item.get('score') or 0.0):.2f}; {item.get('reason', 'matched')}]: "
-            f"{item['snippet']}"
-        )
+    for item in search_service(root(), args.query, args.limit, layer=args.layer, debug=args.debug):
+        print(format_search_result(item, debug=args.debug))
+    return 0
+
+
+def command_eval(args: argparse.Namespace) -> int:
+    file_path = Path(args.file).resolve() if args.file else None
+    report = run_eval(root(), file_path=file_path, limit=args.limit)
+    print(format_eval(report, args.format), end="")
+    return 0 if int(report["failed"]) == 0 else 1
+
+
+def command_audit(args: argparse.Namespace) -> int:
+    print(format_audit(audit_project(root()), args.format), end="")
+    return 0
+
+
+def command_stale(args: argparse.Namespace) -> int:
+    print(format_stale(root(), args.format), end="")
+    return 0
+
+
+def command_watch(args: argparse.Namespace) -> int:
+    if not args.once:
+        print("watch currently supports --once in this local runtime.")
+        return 2
+    report = ensure_fresh_index(root(), "watch")
+    if report:
+        print("watch check: indexed")
+        print(report)
+    else:
+        print("watch check: fresh")
     return 0
 
 
@@ -149,6 +189,9 @@ def command_knowledge(args: argparse.Namespace) -> int:
         if args.knowledge_command == "retire":
             result = retire_knowledge(root(), args.id, status=args.status)
             print(f"knowledge {result.status}: {result.id} v{result.version} {result.path}")
+            return 0
+        if args.knowledge_command == "conflicts":
+            print(f"knowledge conflicts: {knowledge_conflict_count(root())}")
             return 0
     except (FileNotFoundError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
@@ -220,6 +263,9 @@ def command_rationale(args: argparse.Namespace) -> int:
         if args.rationale_command == "retire":
             result = retire_rationale(root(), args.id, status=args.status)
             print(f"rationale {result.status}: {result.id} v{result.version} {result.path}")
+            return 0
+        if args.rationale_command == "conflicts":
+            print(f"rationale conflicts: {rationale_conflict_count(root())}")
             return 0
     except (FileNotFoundError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
@@ -296,6 +342,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("doctor")
     p.set_defaults(func=command_doctor)
 
+    p = sub.add_parser("status")
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.set_defaults(func=command_status)
+
     p = sub.add_parser("index")
     p.add_argument("--mode", choices=["full", "changed"], default="changed")
     p.set_defaults(func=command_index)
@@ -314,6 +364,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("tests")
     p.add_argument("--base", default="HEAD")
+    p.add_argument("--explain", action="store_true")
     p.set_defaults(func=command_tests)
 
     p = sub.add_parser("record-failure")
@@ -325,7 +376,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--query", required=True)
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--layer", choices=["knowledge", "rationale"], default=None)
+    p.add_argument("--debug", action="store_true")
     p.set_defaults(func=command_search)
+
+    p = sub.add_parser("eval")
+    p.add_argument("--file")
+    p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.set_defaults(func=command_eval)
+
+    p = sub.add_parser("audit")
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.set_defaults(func=command_audit)
+
+    p = sub.add_parser("stale")
+    p.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    p.set_defaults(func=command_stale)
+
+    p = sub.add_parser("watch")
+    p.add_argument("--once", action="store_true")
+    p.set_defaults(func=command_watch)
 
     p = sub.add_parser("knowledge")
     knowledge_sub = p.add_subparsers(dest="knowledge_command", required=True)
@@ -372,6 +442,9 @@ def build_parser() -> argparse.ArgumentParser:
     k = knowledge_sub.add_parser("retire")
     k.add_argument("--id", required=True)
     k.add_argument("--status", choices=["superseded", "archived"], default="archived")
+    k.set_defaults(func=command_knowledge)
+
+    k = knowledge_sub.add_parser("conflicts")
     k.set_defaults(func=command_knowledge)
 
     p = sub.add_parser("rationale")
@@ -427,6 +500,9 @@ def build_parser() -> argparse.ArgumentParser:
     r = rationale_sub.add_parser("retire")
     r.add_argument("--id", required=True)
     r.add_argument("--status", choices=["superseded", "archived"], default="archived")
+    r.set_defaults(func=command_rationale)
+
+    r = rationale_sub.add_parser("conflicts")
     r.set_defaults(func=command_rationale)
 
     p = sub.add_parser("migrate")

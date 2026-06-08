@@ -2,6 +2,8 @@
 
 English version: [README.en.md](README.en.md)
 
+Версионные изменения: [CHANGELOG.md](CHANGELOG.md)
+
 `project-memory-kit` добавляет в репозиторий локальную память для агентов, которые пишут код.
 
 Память хранится внутри проекта, поэтому несколько чатов могут работать над одним кодом без потери контекста: агент видит файлы, символы, импорты, обратные зависимости, релевантные тесты, прошлые падения и смысловые правила проекта.
@@ -17,6 +19,7 @@ AGENTS.md
 .project-memory/install.json
 .project-memory/knowledge/
 .project-memory/rationale/
+.project-memory/evals/
 tools/project_memory/
 pmem
 pmem.ps1
@@ -115,6 +118,8 @@ pmem version
 ```bash
 ./pmem version
 ./pmem doctor
+./pmem status
+./pmem stale
 ./pmem migrate
 ./pmem modules list
 ./pmem modules set human --enabled true
@@ -123,22 +128,29 @@ pmem version
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "описание задачи"
+./pmem audit
+./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
+./pmem knowledge conflicts
 ./pmem knowledge context --task "redesign product page"
 ./pmem knowledge show --id resource-mechanics
 ./pmem knowledge retire --id old-design-rules
 ./pmem rationale add --type decision --title "Use SQLite" --file notes/rationale/sqlite.md
 ./pmem rationale update --id use-sqlite --file notes/rationale/sqlite.md
 ./pmem rationale search --query "why not postgres"
+./pmem rationale conflicts
 ./pmem rationale context --task "change memory database"
 ./pmem rationale show --id use-sqlite
 ./pmem rationale retire --id old-storage-choice
 ./pmem tests --base HEAD
+./pmem tests --base HEAD --explain
 ./pmem search --query "payment validation" --limit 10
+./pmem search --query "payment validation" --limit 10 --debug
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
+./pmem watch --once
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
 ```
@@ -160,10 +172,16 @@ args = ["mcp", "--root", "/absolute/path/to/repo"]
 ```text
 pmem_doctor
 pmem_index
+pmem_status
 pmem_context
 pmem_impact
 pmem_tests
 pmem_search
+pmem_search_debug
+pmem_eval
+pmem_audit
+pmem_modules
+pmem_watch_status
 pmem_knowledge_context
 pmem_knowledge_search
 pmem_knowledge_show
@@ -183,16 +201,18 @@ MCP удобен для коротких structured-ответов агенту.
 - В поиске по knowledge по умолчанию используются только `current` записи. При изменении принципа выполняется `knowledge update`, чтобы не создавать вторую конкурирующую запись.
 - Rationale layer хранит проверяемые причины: решения, отклоненные варианты, эксперименты, инварианты и evidence.
 - Полные версии rationale-записей лежат в `.project-memory/rationale/**/*.md`; в контекст попадают только короткие выдержки, id, score/reason и путь к полной версии.
-- SQLite FTS5 `bm25()` ранжирует keyword results. Vector search добавляется сверху, если Qdrant/FastEmbed доступны.
+- Hybrid search объединяет SQLite FTS5 `bm25()`, vector score, совпадения терминов, path, graph proximity, confidence, layer и recency.
+- `./pmem search --debug` показывает компоненты ранжирования.
 - `search`, `context`, `impact` и `tests` автоматически запускают локальный `changed` index, если база пустая или stale.
+- `status`, `stale`, `audit`, `eval`, `tests --explain` и `watch --once` помогают проверять качество памяти локально.
 - Полные записи открываются только при необходимости.
 - У связей есть `confidence`; более точные bindings получают более высокий score.
 - Qdrant local + FastEmbed используются для semantic search, если зависимости доступны.
 - Если Qdrant/FastEmbed недоступны, включается deterministic fallback, чтобы установка и индексирование не ломались.
 - Python parser извлекает modules/classes/functions/methods/imports/calls/inheritance/docstrings.
 - JS/TS parser извлекает modules/classes/functions/methods/imports/exports/require/dynamic imports/calls/JSX component references.
-- Для JS/TS используется TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе работает встроенный lexical parser.
-- Локальный MCP server предоставляет агентам tools для doctor/index/context/impact/search/tests/knowledge/rationale поверх того же `pmem` runtime.
+- Для JS/TS используется настраиваемый backend. По умолчанию `auto`: TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе встроенный lexical parser. `tree_sitter` и `lsp` зарезервированы как optional backends без обязательных зависимостей.
+- Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/knowledge/rationale поверх того же `pmem` runtime.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
 
 ## Optional Modules
@@ -212,6 +232,32 @@ modules:
 ./pmem modules set human --enabled true
 ./pmem modules set human --enabled false
 ```
+
+## Memory Evals
+
+Локальные evals лежат в `.project-memory/evals/*.jsonl`.
+
+Пример строки:
+
+```json
+{"query":"payment validation","expect_path":"src/payments.py"}
+```
+
+Запуск:
+
+```bash
+./pmem eval --file .project-memory/evals/search.jsonl
+```
+
+## Version Updates
+
+Кратко:
+
+- `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, новые MCP tools, parser backend config.
+- `0.6.0`: BM25, auto-index, cleanup удаленных файлов, optional `human` module.
+- `0.5.0`: локальный MCP server.
+
+Полный список: [CHANGELOG.md](CHANGELOG.md)
 
 ## Knowledge Layer
 

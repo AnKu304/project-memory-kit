@@ -16,6 +16,7 @@ Before any meaningful code, config, schema, dependency, API, test, build, routin
 
 ```bash
 ./pmem doctor
+./pmem status
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<current task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
@@ -46,10 +47,24 @@ After editing, run:
 ```bash
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
-./pmem tests --base HEAD
+./pmem tests --base HEAD --explain
 ```
 
-Run the targeted test commands returned by `./pmem tests`.
+Run the targeted test commands returned by `./pmem tests --base HEAD`.
+
+If retrieved memory looks incomplete or surprising, run:
+
+```bash
+./pmem search --query "<task terms>" --debug
+```
+
+For memory quality checks, run:
+
+```bash
+./pmem stale
+./pmem audit
+./pmem eval --file .project-memory/evals/search.jsonl
+```
 
 Use project-local tooling and sandboxes for verification whenever possible. Inspect command output locally and summarize the relevant result; do not send long raw outputs unless they are necessary to diagnose an ambiguous failure.
 

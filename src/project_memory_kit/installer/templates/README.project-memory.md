@@ -6,6 +6,8 @@ Project knowledge lives in `knowledge/`. These Markdown files are the full sourc
 
 Project rationale lives in `rationale/`. These Markdown files are the full source for verified decisions, rejected alternatives, experiments, invariants, and evidence-backed "why" records.
 
+Memory evals live in `evals/`. These JSONL files test whether local search returns expected project files or records.
+
 Local MCP is available through:
 
 ```bash
@@ -20,7 +22,19 @@ Vector state is controlled by `config.yaml`:
 - `vector.backend: qdrant` requires Qdrant/FastEmbed and fails loudly if unavailable.
 - `vector.backend: fallback` keeps deterministic bootstrap records only.
 
-Keyword search uses SQLite FTS5 `bm25()`. `search`, `context`, `impact`, and `tests` run a local `changed` index automatically when indexed files are missing or stale.
+Hybrid search uses SQLite FTS5 `bm25()`, vector score when available, term coverage, path matches, graph proximity, confidence, layer, and recency. `search`, `context`, `impact`, `tests`, and `watch --once` run a local `changed` index automatically when indexed files are missing or stale.
+
+Useful checks:
+
+```bash
+./pmem status
+./pmem stale
+./pmem search --query "<query>" --debug
+./pmem eval --file .project-memory/evals/search.jsonl
+./pmem audit
+./pmem tests --base HEAD --explain
+./pmem watch --once
+```
 
 Optional modules are controlled in `config.yaml`:
 
@@ -39,6 +53,7 @@ Commit:
 - this README
 - `knowledge/**/*.md`
 - `rationale/**/*.md`
+- `evals/**/*.jsonl`
 - `human/**/*.md` when the module is enabled
 
 Do not commit:

@@ -134,12 +134,17 @@ if typer is not None:
 
     for _name in [
         "doctor",
+        "status",
         "index",
         "impact",
         "context",
         "tests",
         "record-failure",
         "search",
+        "eval",
+        "audit",
+        "stale",
+        "watch",
         "knowledge",
         "rationale",
         "migrate",
@@ -175,7 +180,7 @@ def _argparse_main(argv: list[str]) -> int:
 
     sub.add_parser("version")
 
-    for name in ["doctor", "index", "impact", "context", "tests", "record-failure", "search", "knowledge", "rationale", "migrate", "modules", "mcp"]:
+    for name in ["doctor", "status", "index", "impact", "context", "tests", "record-failure", "search", "eval", "audit", "stale", "watch", "knowledge", "rationale", "migrate", "modules", "mcp"]:
         p = sub.add_parser(name)
         p.add_argument("args", nargs=argparse.REMAINDER)
 

@@ -8,13 +8,17 @@ from typing import Any, TextIO
 
 from tools.project_memory.services.context_builder import build_context
 from tools.project_memory.services.doctor import doctor as doctor_service
+from tools.project_memory.services.eval_runner import format_eval, run_eval
 from tools.project_memory.services.failure_memory import record_failure
+from tools.project_memory.services.governance import audit_project, format_audit
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.knowledge import build_knowledge_context, search_knowledge, show_knowledge
+from tools.project_memory.services.modules import format_module_states, module_states
 from tools.project_memory.services.rationale import build_rationale_context, search_rationale, show_rationale
 from tools.project_memory.services.search import search as search_service
-from tools.project_memory.services.test_selector import select_tests
+from tools.project_memory.services.status import format_stale, format_status, project_status
+from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.version import __version__
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -78,6 +82,12 @@ TOOLS: list[dict[str, Any]] = [
         read_only=False,
     ),
     _tool(
+        "pmem_status",
+        "Project memory status",
+        "Return index freshness, graph counts, vector status, parser config, and module state.",
+        _schema(),
+    ),
+    _tool(
         "pmem_context",
         "Build bounded task context",
         "Return bounded change context for a task: impact, retrieved chunks, knowledge, rationale, failures, and tests.",
@@ -118,6 +128,52 @@ TOOLS: list[dict[str, Any]] = [
             },
             ["query"],
         ),
+    ),
+    _tool(
+        "pmem_search_debug",
+        "Debug project memory search",
+        "Search local memory and return hybrid ranking components for each result.",
+        _schema(
+            {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+                "layer": {
+                    "type": "string",
+                    "enum": ["all", "knowledge", "rationale"],
+                    "default": "all",
+                },
+            },
+            ["query"],
+        ),
+    ),
+    _tool(
+        "pmem_eval",
+        "Run memory evals",
+        "Run built-in or JSONL search evals against local project memory.",
+        _schema(
+            {
+                "file": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
+            }
+        ),
+    ),
+    _tool(
+        "pmem_audit",
+        "Audit project memory",
+        "Check memory governance issues such as stale index, conflicts, and rationale without evidence.",
+        _schema(),
+    ),
+    _tool(
+        "pmem_modules",
+        "List optional modules",
+        "Return optional project-memory module state.",
+        _schema(),
+    ),
+    _tool(
+        "pmem_watch_status",
+        "Watch status",
+        "Return local watch/index freshness status without starting a long-running process.",
+        _schema(),
     ),
     _tool(
         "pmem_knowledge_context",
@@ -241,6 +297,11 @@ def _tool_index(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     return _text_result(report, {"mode": mode, "report": report})
 
 
+def _tool_status(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    report = project_status(root)
+    return _text_result(format_status(report), {"status": report})
+
+
 def _tool_context(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     task = str(args.get("task") or "").strip()
     if not task:
@@ -259,6 +320,9 @@ def _tool_impact(root: Path, args: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_tests(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     base = str(args.get("base") or "HEAD")
+    if bool(args.get("explain", False)):
+        text = explain_tests(root, base=base)
+        return _text_result(text, {"base": base, "explain": text})
     commands = select_tests(root, base=base)
     text = "\n".join(f"- `{command}`" for command in commands) if commands else "No targeted tests found."
     return _text_result(text, {"base": base, "commands": commands})
@@ -278,6 +342,58 @@ def _tool_search(root: Path, args: dict[str, Any]) -> dict[str, Any]:
         return _text_result("layer must be `all`, `knowledge`, or `rationale`.", {"layer": layer}, is_error=True)
     rows = search_service(root, query, limit, layer=layer_arg)
     return _text_result(_format_search_rows(rows), {"query": query, "limit": limit, "layer": layer, "results": rows})
+
+
+def _tool_search_debug(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _text_result("query is required.", {}, is_error=True)
+    limit = _limit(args.get("limit"), 10, 50)
+    layer = str(args.get("layer") or "all")
+    layer_arg = None if layer == "all" else layer
+    if layer_arg not in {None, "knowledge", "rationale"}:
+        return _text_result("layer must be `all`, `knowledge`, or `rationale`.", {"layer": layer}, is_error=True)
+    rows = search_service(root, query, limit, layer=layer_arg, debug=True)
+    text = _format_search_rows(rows)
+    if rows:
+        text += "\n" + "\n".join(f"  components: {item.get('components', {})}" for item in rows)
+    return _text_result(text, {"query": query, "limit": limit, "layer": layer, "results": rows})
+
+
+def _tool_eval(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    raw_file = str(args.get("file") or "").strip()
+    file_path = None
+    if raw_file:
+        file_path = Path(raw_file)
+        if not file_path.is_absolute():
+            file_path = root / file_path
+    limit = _limit(args.get("limit"), 10, 50)
+    report = run_eval(root, file_path=file_path, limit=limit)
+    return _text_result(format_eval(report), {"eval": report}, is_error=int(report["failed"]) > 0)
+
+
+def _tool_audit(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    report = audit_project(root)
+    return _text_result(format_audit(report), {"audit": report})
+
+
+def _tool_modules(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    states = [
+        {
+            "name": state.name,
+            "enabled": state.enabled,
+            "path_key": state.path_key,
+            "path": str(state.path) if state.path else None,
+            "description": state.description,
+        }
+        for state in module_states(root)
+    ]
+    return _text_result(format_module_states(root), {"modules": states})
+
+
+def _tool_watch_status(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    report = project_status(root)
+    return _text_result(format_stale(root), {"index": report["index"]})
 
 
 def _tool_knowledge_context(root: Path, args: dict[str, Any]) -> dict[str, Any]:
@@ -349,10 +465,16 @@ ToolHandler = Callable[[Path, dict[str, Any]], dict[str, Any]]
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "pmem_doctor": _tool_doctor,
     "pmem_index": _tool_index,
+    "pmem_status": _tool_status,
     "pmem_context": _tool_context,
     "pmem_impact": _tool_impact,
     "pmem_tests": _tool_tests,
     "pmem_search": _tool_search,
+    "pmem_search_debug": _tool_search_debug,
+    "pmem_eval": _tool_eval,
+    "pmem_audit": _tool_audit,
+    "pmem_modules": _tool_modules,
+    "pmem_watch_status": _tool_watch_status,
     "pmem_knowledge_context": _tool_knowledge_context,
     "pmem_knowledge_search": _tool_knowledge_search,
     "pmem_knowledge_show": _tool_knowledge_show,

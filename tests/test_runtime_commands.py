@@ -11,6 +11,104 @@ from project_memory_kit.installer.install_project import install_project
 
 
 class RuntimeCommandsTest(unittest.TestCase):
+    def test_status_search_debug_eval_audit_and_tests_explain(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            (root / "app.py").write_text(
+                "def alpha_payment_validator(amount):\n"
+                "    return amount >= 0\n",
+                encoding="utf-8",
+            )
+
+            status_before = subprocess.run(
+                [str(root / "pmem"), "status"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(status_before.returncode, 0, status_before.stderr)
+            self.assertIn("fresh=False", status_before.stdout)
+            self.assertIn("missing=", status_before.stdout)
+            self.assertIn("app.py", status_before.stdout)
+
+            search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "alpha payment validator", "--limit", "5", "--debug"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertIn("[hybrid", search.stdout)
+            self.assertIn("components=", search.stdout)
+            self.assertIn("bm25", search.stdout)
+
+            evals = root / ".project-memory" / "evals"
+            evals.mkdir(parents=True, exist_ok=True)
+            eval_file = evals / "search.jsonl"
+            eval_file.write_text(
+                json.dumps({"query": "alpha payment validator", "expect_path": "app.py"}) + "\n",
+                encoding="utf-8",
+            )
+            evaluation = subprocess.run(
+                [str(root / "pmem"), "eval", "--file", str(eval_file)],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(evaluation.returncode, 0, evaluation.stderr)
+            self.assertIn("passed=1", evaluation.stdout)
+            self.assertIn("failed=0", evaluation.stdout)
+
+            audit = subprocess.run(
+                [str(root / "pmem"), "audit"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(audit.returncode, 0, audit.stderr)
+            self.assertIn("Memory Audit", audit.stdout)
+            self.assertIn("index_fresh=True", audit.stdout)
+
+            stale = subprocess.run(
+                [str(root / "pmem"), "stale"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(stale.returncode, 0, stale.stderr)
+            self.assertIn("fresh=True", stale.stdout)
+
+            explained_tests = subprocess.run(
+                [str(root / "pmem"), "tests", "--explain"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(explained_tests.returncode, 0, explained_tests.stderr)
+            self.assertIn("Test Plan", explained_tests.stdout)
+
+            watch = subprocess.run(
+                [str(root / "pmem"), "watch", "--once"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(watch.returncode, 0, watch.stderr)
+            self.assertIn("watch check", watch.stdout)
+
     def test_search_auto_indexes_and_uses_bm25(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -36,7 +134,8 @@ class RuntimeCommandsTest(unittest.TestCase):
 
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertIn("app.py", search.stdout)
-            self.assertIn("[bm25", search.stdout)
+            self.assertIn("[hybrid", search.stdout)
+            self.assertIn("bm25", search.stdout)
 
             conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
             try:
@@ -244,6 +343,12 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("pmem_context", tool_names)
             self.assertIn("pmem_search", tool_names)
             self.assertIn("pmem_record_failure", tool_names)
+            self.assertIn("pmem_status", tool_names)
+            self.assertIn("pmem_search_debug", tool_names)
+            self.assertIn("pmem_eval", tool_names)
+            self.assertIn("pmem_audit", tool_names)
+            self.assertIn("pmem_modules", tool_names)
+            self.assertIn("pmem_watch_status", tool_names)
             self.assertIn("app.py", by_id[3]["result"]["content"][0]["text"])
             self.assertIn("results", by_id[3]["result"]["structuredContent"])
 
@@ -450,7 +555,7 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertIn("Storage Decision", search.stdout)
-            self.assertIn("[bm25", search.stdout)
+            self.assertIn("[hybrid", search.stdout)
 
             source.write_text(
                 "# Storage Decision\n\nUse canonical-db-token as the source of truth.\n",
@@ -497,7 +602,7 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(layer_search.returncode, 0, layer_search.stderr)
             self.assertIn("rationale:storage-decision", layer_search.stdout)
-            self.assertIn("matched", layer_search.stdout)
+            self.assertIn("[hybrid", layer_search.stdout)
 
             context = subprocess.run(
                 [

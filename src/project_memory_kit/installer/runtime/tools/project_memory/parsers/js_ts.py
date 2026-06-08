@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from tools.project_memory.config import load_config
 from tools.project_memory.parsers.js_ts_imports import (
     module_name_for_path,
     resolve_module,
@@ -88,9 +89,20 @@ _REF_EXCLUDES = _CALL_EXCLUDES | {
 class JsTsParser:
     def parse(self, root: Path, path: Path) -> ParseResult:
         module = module_name_for_path(root, path)
-        result = self._parse_with_typescript(root, path, module)
+        backend = str(load_config(root).get("parsers", {}).get("js_ts", {}).get("backend") or "auto")
+        warnings: list[str] = []
+        result: ParseResult | None = None
+        if backend in {"auto", "typescript"}:
+            result = self._parse_with_typescript(root, path, module)
+            if result is None and backend == "typescript":
+                warnings.append("typescript parser backend unavailable; used lexical fallback")
+        elif backend in {"tree_sitter", "lsp"}:
+            warnings.append(f"{backend} parser backend is configured but not installed; used lexical fallback")
+        elif backend != "lexical":
+            warnings.append(f"unknown js_ts parser backend {backend}; used lexical fallback")
         if result is None:
             result = self._parse_lexical(path, module)
+        result.warnings.extend(warnings)
         for item in result.imports:
             item.target_path = resolve_module(root, path, item.module)
         return result

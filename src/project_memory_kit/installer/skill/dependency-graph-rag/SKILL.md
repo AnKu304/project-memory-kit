@@ -9,7 +9,7 @@ Use this repository's local project memory before and after meaningful changes.
 
 If the local MCP server is configured, use `pmem_*` MCP tools for bounded context, search, impact, tests, knowledge, and rationale. The shell commands below remain the fallback and final verification baseline.
 
-Keyword search uses local SQLite FTS5 BM25 ranking. `search`, `context`, `impact`, and `tests` auto-refresh stale local indexes, but explicit `index` commands remain the verification baseline for meaningful edits.
+Search uses local hybrid ranking: BM25, optional vector score, term coverage, path matches, graph proximity, confidence, layer, and recency. `search`, `context`, `impact`, `tests`, and `watch --once` auto-refresh stale local indexes, but explicit `index` commands remain the verification baseline for meaningful edits.
 
 ## Trigger
 
@@ -42,6 +42,7 @@ Run:
 
 ```bash
 ./pmem doctor
+./pmem status
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<user task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
@@ -84,6 +85,12 @@ Extract:
 - current project rationale
 - low-confidence graph areas
 
+If retrieval seems weak or surprising, run:
+
+```bash
+./pmem search --query "<task terms>" --debug
+```
+
 ## Editing Rules
 
 - Edit only the files required by the task and impact report.
@@ -107,10 +114,18 @@ Run:
 ```bash
 ./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
-./pmem tests --base HEAD
+./pmem tests --base HEAD --explain
 ```
 
 Run the returned targeted test commands.
+
+For memory quality checks, use:
+
+```bash
+./pmem stale
+./pmem audit
+./pmem eval --file .project-memory/evals/search.jsonl
+```
 
 Use local project tooling and temporary sandboxes for verification when available. Save long failure logs under `.project-memory/logs/` and record them with `./pmem record-failure`; inspect logs locally and summarize only the relevant result.
 

@@ -179,6 +179,9 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str) -
         "rationale_paths": [
             ".project-memory/rationale/",
         ],
+        "eval_paths": [
+            ".project-memory/evals/",
+        ],
         "optional_paths": [
             ".project-memory/human/",
         ],

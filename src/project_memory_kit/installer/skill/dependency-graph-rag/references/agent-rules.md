@@ -2,7 +2,13 @@
 
 The local project-memory workflow is mandatory for meaningful code and knowledge work.
 
-Keyword search is ranked with SQLite FTS5 BM25. `search`, `context`, `impact`, and `tests` auto-refresh stale local indexes, but explicit `./pmem index --mode changed` remains part of the verification workflow.
+Search is ranked with local hybrid scoring: BM25, optional vector score, term coverage, path matches, graph proximity, confidence, layer, and recency. `search`, `context`, `impact`, `tests`, and `watch --once` auto-refresh stale local indexes, but explicit `./pmem index --mode changed` remains part of the verification workflow.
+
+Use `./pmem status` before larger work when you need a quick health check.
+
+Use `./pmem search --query "<query>" --debug` when retrieved context looks incomplete or surprising.
+
+Use `./pmem eval --file .project-memory/evals/search.jsonl` and `./pmem audit` to check memory quality before relying on project rules across chats.
 
 Use `./pmem knowledge context --task "<task>"` for research, architecture, SEO, UX, design, product, content, positioning, or principle-heavy tasks.
 

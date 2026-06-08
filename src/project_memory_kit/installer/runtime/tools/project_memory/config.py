@@ -18,6 +18,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "cache_dir": ".project-memory/cache",
         "knowledge_dir": ".project-memory/knowledge",
         "rationale_dir": ".project-memory/rationale",
+        "evals_dir": ".project-memory/evals",
         "human_dir": ".project-memory/human",
         "models_dir": ".project-memory/models",
     },
@@ -25,7 +26,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_index": {
             "enabled": True,
             "mode": "changed",
-            "commands": ["search", "context", "impact", "tests"],
+            "commands": ["search", "context", "impact", "tests", "watch"],
         },
         "include_extensions": [
             ".py",
@@ -65,6 +66,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
         ],
     },
     "tests": {"default_commands": ["python -m unittest discover"], "test_roots": ["tests"]},
+    "search": {
+        "weights": {
+            "bm25": 0.35,
+            "vector": 0.22,
+            "term": 0.16,
+            "path": 0.08,
+            "graph": 0.07,
+            "confidence": 0.06,
+            "layer": 0.03,
+            "recency": 0.03,
+        }
+    },
+    "parsers": {
+        "js_ts": {
+            "backend": "auto",
+            "fallback": "lexical",
+            "optional_backends": ["typescript", "tree_sitter", "lsp", "lexical"],
+        },
+    },
     "memory": {"max_context_chunks": 8, "vector_size": 64},
     "knowledge": {"max_context_items": 5},
     "rationale": {"max_context_items": 5},

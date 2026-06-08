@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
@@ -41,6 +42,23 @@ def _local_score(query: str, row: dict[str, object], source: str = "fts") -> tup
     return score, reason
 
 
+def _term_coverage(query: str, row: dict[str, object]) -> float:
+    terms = _terms(query)
+    if not terms:
+        return 0.0
+    haystack = " ".join(str(row.get(key) or "").lower() for key in ["path", "fqn", "snippet"])
+    matches = {term for term in terms if term in haystack}
+    return len(matches) / max(len(set(terms)), 1)
+
+
+def _path_score(query: str, row: dict[str, object]) -> float:
+    terms = _terms(query)
+    path = str(row.get("path") or "").lower()
+    if not terms or not path:
+        return 0.0
+    return 1.0 if any(term in path for term in terms) else 0.0
+
+
 def _annotate_rows(query: str, rows: list[dict[str, object]], source: str) -> list[dict[str, object]]:
     annotated: list[dict[str, object]] = []
     for row in rows:
@@ -60,9 +78,137 @@ def _annotate_bm25_rows(query: str, rows: list[dict[str, object]]) -> list[dict[
         order_score = max(0.05, 1.0 - (index / total) * 0.35)
         row["score"] = max(local_score, order_score)
         row["source"] = "bm25"
+        row["components"] = {"bm25": row["score"], "term": _term_coverage(query, row), "path": _path_score(query, row)}
         row["reason"] = f"bm25 rank {float(row.get('bm25_rank') or 0.0):.6f}; {local_reason}"
         annotated.append(row)
     return annotated
+
+
+def _layer_for_row(store: SQLiteGraphStore, row: dict[str, object]) -> str | None:
+    rows = store.query("SELECT layer FROM nodes WHERE id = ?", (str(row.get("chunk_id") or ""),))
+    if rows:
+        return rows[0]["layer"]
+    return None
+
+
+def _graph_components(store: SQLiteGraphStore, chunk_id: str) -> tuple[float, float]:
+    rows = store.query(
+        """
+        SELECT count(*) AS edge_count, avg(confidence) AS avg_confidence
+        FROM edges
+        WHERE src_id = ? OR dst_id = ?
+        """,
+        (chunk_id, chunk_id),
+    )
+    if not rows:
+        return 0.0, 0.0
+    edge_count = int(rows[0]["edge_count"] or 0)
+    avg_confidence = float(rows[0]["avg_confidence"] or 0.0)
+    return min(edge_count / 6.0, 1.0), max(0.0, min(avg_confidence, 1.0))
+
+
+def _recency_component(store: SQLiteGraphStore, row: dict[str, object]) -> float:
+    path = str(row.get("path") or "")
+    if not path:
+        return 0.0
+    file_rows = store.query("SELECT indexed_at FROM file_index_state WHERE path = ?", (path,))
+    if file_rows:
+        return 0.7
+    layer = _layer_for_row(store, row)
+    if layer in {"knowledge", "rationale"}:
+        return 0.8
+    return 0.0
+
+
+def _layer_component(layer: str | None) -> float:
+    if layer in {"knowledge", "rationale"}:
+        return 0.85
+    if layer:
+        return 0.65
+    return 0.55
+
+
+def _weights(root: Path) -> dict[str, float]:
+    configured = load_config(root).get("search", {}).get("weights", {})
+    defaults = {
+        "bm25": 0.35,
+        "vector": 0.22,
+        "term": 0.16,
+        "path": 0.08,
+        "graph": 0.07,
+        "confidence": 0.06,
+        "layer": 0.03,
+        "recency": 0.03,
+    }
+    for key, value in configured.items():
+        if key in defaults:
+            try:
+                defaults[key] = float(value)
+            except (TypeError, ValueError):
+                pass
+    return defaults
+
+
+def _merge_candidates(candidates: list[dict[str, object]]) -> list[dict[str, object]]:
+    merged: dict[str, dict[str, object]] = {}
+    for item in candidates:
+        chunk_id = str(item.get("chunk_id") or "")
+        if not chunk_id:
+            continue
+        existing = merged.get(chunk_id)
+        if existing is None:
+            copied = dict(item)
+            copied["sources"] = [str(item.get("source") or "local")]
+            copied["components"] = dict(item.get("components") or {})
+            merged[chunk_id] = copied
+            continue
+        existing_sources = set(existing.get("sources") or [])
+        existing_sources.add(str(item.get("source") or "local"))
+        existing["sources"] = sorted(existing_sources)
+        components = dict(existing.get("components") or {})
+        for key, value in dict(item.get("components") or {}).items():
+            components[key] = max(float(components.get(key) or 0.0), float(value or 0.0))
+        existing["components"] = components
+        if not existing.get("snippet") and item.get("snippet"):
+            existing["snippet"] = item["snippet"]
+    return list(merged.values())
+
+
+def _apply_hybrid_scores(root: Path, store: SQLiteGraphStore, query: str, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    weights = _weights(root)
+    scored: list[dict[str, object]] = []
+    for row in rows:
+        chunk_id = str(row.get("chunk_id") or "")
+        components: dict[str, float] = {key: float(value or 0.0) for key, value in dict(row.get("components") or {}).items()}
+        components.setdefault("bm25", 0.0)
+        components.setdefault("vector", 0.0)
+        components["term"] = max(components.get("term", 0.0), _term_coverage(query, row))
+        components["path"] = max(components.get("path", 0.0), _path_score(query, row))
+        graph_score, confidence_score = _graph_components(store, chunk_id)
+        components["graph"] = max(components.get("graph", 0.0), graph_score)
+        components["confidence"] = max(components.get("confidence", 0.0), confidence_score)
+        layer = _layer_for_row(store, row)
+        components["layer"] = _layer_component(layer)
+        components["recency"] = _recency_component(store, row)
+        score = min(1.0, sum(weights.get(key, 0.0) * value for key, value in components.items()))
+        row["score"] = score
+        row["source"] = "hybrid"
+        row["components"] = {key: round(value, 4) for key, value in sorted(components.items())}
+        row["reason"] = "hybrid rank from " + "+".join(str(item) for item in row.get("sources", ["local"]))
+        scored.append(row)
+    scored.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return scored
+
+
+def format_search_result(item: dict[str, Any], debug: bool = False) -> str:
+    line = (
+        f"{item['path']} {item['fqn']} "
+        f"[{item.get('source', 'local')} {float(item.get('score') or 0.0):.2f}; {item.get('reason', 'matched')}]: "
+        f"{item['snippet']}"
+    )
+    if debug:
+        line += f" components={item.get('components', {})}"
+    return line
 
 
 def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | None = None) -> list[dict[str, object]]:
@@ -175,29 +321,30 @@ def _vector_search(
             local_score, reason = _local_score(query, row, source="local")
             row["score"] = max(vector_score, local_score)
             row["source"] = "vector"
+            row["components"] = {"vector": max(0.0, min(vector_score, 1.0)), "term": _term_coverage(query, row), "path": _path_score(query, row)}
             row["reason"] = f"vector score plus {reason}"
             rows.append(row)
     return rows
 
 
-def search(root: Path, query: str, limit: int = 10, layer: str | None = None) -> list[dict[str, object]]:
+def search(root: Path, query: str, limit: int = 10, layer: str | None = None, debug: bool = False) -> list[dict[str, object]]:
     ensure_fresh_index(root, "search")
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
-    results: list[dict[str, object]] = []
+    candidates: list[dict[str, object]] = []
     try:
-        results.extend(_vector_search(root, store, query, limit, layer=layer))
+        candidates.extend(_vector_search(root, store, query, limit, layer=layer))
     except RuntimeError:
         raise
     except Exception:
-        results = []
+        candidates = []
 
-    seen = {str(item["chunk_id"]) for item in results}
     for row in _fts_search(store, query, limit, layer=layer):
-        if str(row["chunk_id"]) not in seen:
-            results.append(row)
-            seen.add(str(row["chunk_id"]))
-        if len(results) >= limit * 2:
+        candidates.append(row)
+        if len(candidates) >= limit * 3:
             break
-    results.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    results = _apply_hybrid_scores(root, store, query, _merge_candidates(candidates))
+    if not debug:
+        for item in results:
+            item.pop("sources", None)
     return results[:limit]
