@@ -24,7 +24,11 @@ function candidatePythons() {
 
 function selectPython() {
   for (const item of candidatePythons()) {
-    const probe = spawnSync(item.command, [...item.prefix, "--version"], {
+    const probe = spawnSync(item.command, [
+      ...item.prefix,
+      "-c",
+      "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+    ], {
       stdio: "ignore",
       env: process.env
     });

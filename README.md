@@ -331,6 +331,7 @@ modules:
 
 Кратко:
 
+- `0.10.0`: npm package smoke, tarball validation, `prepack`, строгий package `files`, проверка Python 3.11+ в Node wrapper, npm distribution guide.
 - `0.9.0`: безопасное добавление профилей при upgrade, workspace/package aliases для JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.
 - `0.8.0`: npm/npx distribution, профили `Codex`/`Claude`/`Multi-agent`, Claude Code структура, CI, `audit --secrets`, `optimize`, `mcp-config`.
 - `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, новые MCP tools, parser backend config.

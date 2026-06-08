@@ -1,13 +1,20 @@
 {
   "name": "@anku/project-memory-kit",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Local-first project memory installer for coding agents",
   "license": "MIT",
   "author": "AnKu304",
   "homepage": "https://github.com/AnKu304/project-memory-kit",
+  "bugs": {
+    "url": "https://github.com/AnKu304/project-memory-kit/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AnKu304/project-memory-kit.git"
+  },
+  "type": "commonjs",
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "agents",
@@ -22,8 +29,19 @@
     "project-memory-kit": "./npm/bin/pmem.js"
   },
   "files": [
-    "src",
-    "npm",
+    "src/**/*.py",
+    "src/**/*.js",
+    "src/**/*.json",
+    "src/**/*.jsonl",
+    "src/**/*.md",
+    "src/**/*.sql",
+    "src/**/*.yaml",
+    "src/project_memory_kit/installer/templates/project-memory.gitignore",
+    "src/project_memory_kit/installer/templates/root.gitignore.block",
+    "npm/bin/pmem.js",
+    "npm/scripts/*.js",
+    "docs/npm.md",
+    "docs/release-notes/*.md",
     "README.md",
     "README.en.md",
     "CHANGELOG.md",
@@ -34,6 +52,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:src/project_memory_kit/installer/runtime python3 -m unittest discover -s tests"
+    "test": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:src/project_memory_kit/installer/runtime python3 -m unittest discover -s tests",
+    "smoke": "node npm/scripts/smoke.js",
+    "pack:check": "node npm/scripts/check-pack.js",
+    "check": "npm test && npm run smoke && npm run pack:check",
+    "prepack": "node npm/scripts/smoke.js"
   }
 }

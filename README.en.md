@@ -331,6 +331,7 @@ Run:
 
 Short version:
 
+- `0.10.0`: npm package smoke, tarball validation, `prepack`, strict package `files`, Python 3.11+ check in the Node wrapper, npm distribution guide.
 - `0.9.0`: safe profile upgrades, workspace/package aliases for JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.
 - `0.8.0`: npm/npx distribution, `Codex`/`Claude`/`Multi-agent` profiles, Claude Code structure, CI, `audit --secrets`, `optimize`, `mcp-config`.
 - `0.7.0`: hybrid search, `search --debug`, `status`, `stale`, `eval`, `audit`, `tests --explain`, `watch --once`, new MCP tools, parser backend config.

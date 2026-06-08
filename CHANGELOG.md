@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.10.0
+
+Added:
+
+- `npm run smoke` for package-level wrapper and install smoke checks.
+- `npm run pack:check` for tarball content validation.
+- npm `prepack` smoke check.
+- npm distribution guide under `docs/npm.md`.
+- CI steps for npm smoke and package content validation.
+
+Updated:
+
+- npm package version moved to `0.10.0`.
+- npm `files` list now includes only required source, runtime, templates, docs, and wrapper files.
+- Node wrapper now verifies Python 3.11+ before running the CLI.
+- Package metadata now includes `bugs`, `type: commonjs`, and public scoped publish config.
+
+Removed:
+
+- Generated Python cache files are excluded from the npm package.
+
+Better than 0.9.0:
+
+- npm packaging is publish-ready apart from the final authenticated `npm publish`.
+- Package content is validated automatically.
+- Users get a clear error when Python is missing or too old.
+
 ## 0.9.0
 
 Added:

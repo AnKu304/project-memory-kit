@@ -42,13 +42,8 @@ jobs:
           "$tmp/pmem" status
           rm -rf "$tmp"
 
-      - name: npm wrapper smoke
-        run: |
-          node npm/bin/pmem.js version
-          tmp="$(mktemp -d)"
-          node npm/bin/pmem.js init --target "$tmp" --agent multiagent
-          "$tmp/pmem" version
-          test -f "$tmp/AGENTS.md"
-          test -f "$tmp/CLAUDE.md"
-          test -f "$tmp/.claude/agents/pmem-coordinator.md"
-          rm -rf "$tmp"
+      - name: npm package smoke
+        run: npm run smoke
+
+      - name: npm package contents
+        run: npm run pack:check
