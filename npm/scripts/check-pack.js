@@ -37,6 +37,7 @@ const required = [
   "CHANGELOG.md",
   "LICENSE",
   "docs/npm.md",
+  "docs/checklists/v0.11.0-catch-up.md",
   "npm/bin/pmem.js",
   "npm/scripts/smoke.js",
   "npm/scripts/check-pack.js",

@@ -145,6 +145,19 @@ If a durable decision, rejected approach, experiment result, invariant, or cause
 ./pmem rationale update --id "<rationale id>" --file "<markdown file>"
 ```
 
+If `.agents/tasks/` contains a completed task, close it:
+
+```bash
+./pmem tasks close --file "<task md path>" --summary "<what changed>"
+```
+
+If the optional Human/Obsidian-like layer is enabled, refresh it after durable knowledge or rationale changes:
+
+```bash
+./pmem human export
+./pmem human graph
+```
+
 If a test fails:
 
 ```bash

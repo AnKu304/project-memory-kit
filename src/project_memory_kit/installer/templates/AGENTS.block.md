@@ -31,6 +31,12 @@ If `.agents/tasks/` exists, check active user tasks and handoffs before starting
 ./pmem tasks check
 ```
 
+When a task file has been completed, close it instead of leaving it active:
+
+```bash
+./pmem tasks close --file "<task md path>" --summary "<what changed>"
+```
+
 Keep context bounded. Use local tools to inspect large files, logs, reports, and test output. Bring only relevant findings, short excerpts, ids, and paths into the working context. Open full files, full knowledge/rationale notes, or long logs only when local summaries are insufficient.
 
 For research, product, UX, design, SEO, architecture, content, positioning, or other principle-heavy work, also run:
@@ -93,6 +99,13 @@ When a durable decision, rejected approach, experiment result, invariant, or cau
 ```
 
 Use `rationale update` for changed causes. Use `rationale retire` for obsolete explanations. Do not keep two competing `current` rationales for the same decision.
+
+If the optional human layer is enabled, refresh it after durable knowledge or rationale changes:
+
+```bash
+./pmem human export
+./pmem human graph
+```
 
 If a test fails:
 

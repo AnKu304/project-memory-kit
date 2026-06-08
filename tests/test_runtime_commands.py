@@ -296,6 +296,75 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(watch.returncode, 0, watch.stderr)
             self.assertIn("watch check", watch.stdout)
 
+    def test_tasks_close_updates_markdown_and_indexes_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root, agent="multiagent")
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            task = root / ".agents/tasks/frontend-review.md"
+            task.write_text(
+                "# Review Product Card\n\nType: handoff\nStatus: active\nRole: reviewer\n",
+                encoding="utf-8",
+            )
+
+            close = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "tasks",
+                    "close",
+                    "--file",
+                    ".agents/tasks/frontend-review.md",
+                    "--summary",
+                    "Reviewed product card dependencies",
+                    "--command",
+                    "npm test",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(close.returncode, 0, close.stderr)
+            self.assertIn("task closed", close.stdout)
+            text = task.read_text(encoding="utf-8")
+            self.assertIn("Status: done", text)
+            self.assertIn("## Completion", text)
+            self.assertIn("Reviewed product card dependencies", text)
+
+            active = subprocess.run(
+                [str(root / "pmem"), "tasks", "check"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(active.returncode, 0, active.stderr)
+            self.assertIn("Tasks: none", active.stdout)
+
+            all_tasks = subprocess.run(
+                [str(root / "pmem"), "tasks", "list", "--all"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(all_tasks.returncode, 0, all_tasks.stderr)
+            self.assertIn("[done]", all_tasks.stdout)
+            self.assertIn("Review Product Card", all_tasks.stdout)
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute(
+                    "SELECT hash FROM file_index_state WHERE path = '.agents/tasks/frontend-review.md'"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertIsNotNone(row)
+
     def test_modules_command_enables_optional_human_layer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -334,6 +403,279 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(disable.returncode, 0, disable.stderr)
             self.assertIn("human: disabled", disable.stdout)
             self.assertTrue((root / ".project-memory/human").exists())
+
+    def test_human_layer_exports_cleans_and_searches_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            notes = root / "notes"
+            notes.mkdir()
+            source = notes / "seo.md"
+            source.write_text("# SEO Rules\n\nUse canonical-human-token for product pages.\n", encoding="utf-8")
+
+            add = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "add",
+                    "--type",
+                    "seo",
+                    "--title",
+                    "SEO Rules",
+                    "--file",
+                    "notes/seo.md",
+                    "--tags",
+                    "seo,human",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(add.returncode, 0, add.stderr)
+
+            disabled_export = subprocess.run(
+                [str(root / "pmem"), "human", "export"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(disabled_export.returncode, 2)
+            self.assertIn("human module is disabled", disabled_export.stderr)
+
+            enable = subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(enable.returncode, 0, enable.stderr)
+
+            stale = root / ".project-memory/human/knowledge/stale.md"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("# stale\n", encoding="utf-8")
+            export = subprocess.run(
+                [str(root / "pmem"), "human", "export"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(export.returncode, 0, export.stderr)
+            self.assertIn("Human export", export.stdout)
+            self.assertFalse(stale.exists())
+            human_note = root / ".project-memory/human/knowledge/seo-rules.md"
+            self.assertTrue(human_note.exists())
+            human_text = human_note.read_text(encoding="utf-8")
+            self.assertIn("source_layer: \"knowledge\"", human_text)
+            self.assertIn("[[knowledge:seo-rules]]", human_text)
+
+            search = subprocess.run(
+                [str(root / "pmem"), "human", "search", "--query", "canonical human token"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertIn(".project-memory/human/knowledge/seo-rules.md", search.stdout)
+
+            global_search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "canonical human token", "--layer", "human"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(global_search.returncode, 0, global_search.stderr)
+            self.assertIn(".project-memory/human/knowledge/seo-rules.md", global_search.stdout)
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute(
+                    "SELECT count(*) FROM nodes WHERE layer = 'human' AND kind = 'HumanChunk'"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertGreater(row[0], 0)
+
+    def test_human_graph_exports_mermaid_and_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            notes = root / "notes"
+            notes.mkdir()
+            (notes / "knowledge.md").write_text("# Product Architecture\n\nUse local first memory.\n", encoding="utf-8")
+            (notes / "rationale.md").write_text("# Use SQLite\n\nSQLite keeps the tool local.\n", encoding="utf-8")
+
+            rationale = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "rationale",
+                    "add",
+                    "--id",
+                    "use-sqlite",
+                    "--title",
+                    "Use SQLite",
+                    "--file",
+                    "notes/rationale.md",
+                    "--evidence",
+                    "local tests pass",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(rationale.returncode, 0, rationale.stderr)
+
+            knowledge = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "add",
+                    "--type",
+                    "architecture",
+                    "--title",
+                    "Product Architecture",
+                    "--file",
+                    "notes/knowledge.md",
+                    "--link",
+                    "depends_on:rationale:use-sqlite",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(knowledge.returncode, 0, knowledge.stderr)
+
+            subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "human", "export"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            graph = subprocess.run(
+                [str(root / "pmem"), "human", "graph"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(graph.returncode, 0, graph.stderr)
+            self.assertIn("Human graph", graph.stdout)
+
+            graph_json = json.loads((root / ".project-memory/human/graph.json").read_text(encoding="utf-8"))
+            node_ids = {node["id"] for node in graph_json["nodes"]}
+            self.assertIn("knowledge:product-architecture", node_ids)
+            self.assertIn("rationale:use-sqlite", node_ids)
+            self.assertIn(
+                {"source": "knowledge:product-architecture", "target": "rationale:use-sqlite", "relation": "depends_on"},
+                graph_json["edges"],
+            )
+            mermaid = (root / ".project-memory/human/graph.mmd").read_text(encoding="utf-8")
+            self.assertIn("graph LR", mermaid)
+            self.assertIn("depends_on", mermaid)
+
+    def test_mcp_human_tools_export_search_and_graph(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            notes = root / "notes"
+            notes.mkdir()
+            (notes / "research.md").write_text("# Human Research\n\nUse mcp-human-token in notes.\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "add",
+                    "--type",
+                    "research",
+                    "--title",
+                    "Human Research",
+                    "--file",
+                    "notes/research.md",
+                ],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            messages = [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "unittest", "version": "0"},
+                    },
+                },
+                {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "pmem_human_export", "arguments": {}}},
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {"name": "pmem_search", "arguments": {"query": "mcp human token", "layer": "human"}},
+                },
+                {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "pmem_human_graph", "arguments": {}}},
+            ]
+            payload = "\n".join(json.dumps(message) for message in messages) + "\n"
+            mcp = subprocess.run(
+                [str(root / "pmem"), "mcp", "--root", str(root)],
+                cwd=root,
+                input=payload,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(mcp.returncode, 0, mcp.stderr)
+            responses = [json.loads(line) for line in mcp.stdout.splitlines()]
+            by_id = {item["id"]: item for item in responses}
+            tool_names = {tool["name"] for tool in by_id[2]["result"]["tools"]}
+            self.assertIn("pmem_human_export", tool_names)
+            self.assertIn("pmem_human_search", tool_names)
+            self.assertIn("pmem_human_graph", tool_names)
+            self.assertIn("generated", by_id[3]["result"]["structuredContent"]["human"])
+            self.assertIn(".project-memory/human/knowledge/human-research.md", by_id[4]["result"]["content"][0]["text"])
+            self.assertTrue((root / ".project-memory/human/graph.json").exists())
+            self.assertIn("nodes", by_id[5]["result"]["structuredContent"]["human_graph"])
 
     def test_context_and_search_work_after_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

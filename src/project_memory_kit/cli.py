@@ -154,6 +154,7 @@ if typer is not None:
         "mcp",
         "mcp-config",
         "tasks",
+        "human",
     ]:
         app.command(_name, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})(
             _forward(_name)
@@ -206,6 +207,7 @@ def _argparse_main(argv: list[str]) -> int:
         "mcp",
         "mcp-config",
         "tasks",
+        "human",
     ]:
         p = sub.add_parser(name)
         p.add_argument("args", nargs=argparse.REMAINDER)

@@ -11,6 +11,16 @@ from tools.project_memory.services.doctor import doctor as doctor_service
 from tools.project_memory.services.eval_runner import format_eval, run_eval
 from tools.project_memory.services.failure_memory import record_failure
 from tools.project_memory.services.governance import audit_project, format_audit
+from tools.project_memory.services.human import (
+    export_human,
+    format_human_export,
+    format_human_graph,
+    format_human_search,
+    format_human_status,
+    human_graph,
+    human_status,
+    search_human,
+)
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.knowledge import build_knowledge_context, search_knowledge, show_knowledge
@@ -20,6 +30,7 @@ from tools.project_memory.services.search import search as search_service
 from tools.project_memory.services.status import format_stale, format_status, project_status
 from tools.project_memory.services.tasks import format_tasks, list_tasks
 from tools.project_memory.services.test_selector import explain_tests, select_tests
+from tools.project_memory.mcp_tools import TOOLS
 from tools.project_memory.version import __version__
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -30,238 +41,6 @@ JSONRPC_INVALID_REQUEST = -32600
 JSONRPC_METHOD_NOT_FOUND = -32601
 JSONRPC_INVALID_PARAMS = -32602
 JSONRPC_INTERNAL_ERROR = -32603
-
-
-def _schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties or {},
-        "required": required or [],
-        "additionalProperties": False,
-    }
-
-
-def _tool(
-    name: str,
-    title: str,
-    description: str,
-    input_schema: dict[str, Any],
-    *,
-    read_only: bool = True,
-) -> dict[str, Any]:
-    return {
-        "name": name,
-        "title": title,
-        "description": description,
-        "inputSchema": input_schema,
-        "annotations": {
-            "readOnlyHint": read_only,
-        },
-    }
-
-
-TOOLS: list[dict[str, Any]] = [
-    _tool(
-        "pmem_doctor",
-        "Project memory doctor",
-        "Check local project-memory setup, migrations, vector backend, and stored memory counts.",
-        _schema(),
-    ),
-    _tool(
-        "pmem_index",
-        "Index project memory",
-        "Index changed files or the full project into local project memory.",
-        _schema(
-            {
-                "mode": {
-                    "type": "string",
-                    "enum": ["changed", "full"],
-                    "default": "changed",
-                },
-            }
-        ),
-        read_only=False,
-    ),
-    _tool(
-        "pmem_status",
-        "Project memory status",
-        "Return index freshness, graph counts, vector status, parser config, and module state.",
-        _schema(),
-    ),
-    _tool(
-        "pmem_context",
-        "Build bounded task context",
-        "Return bounded change context for a task: impact, retrieved chunks, knowledge, rationale, failures, and tests.",
-        _schema(
-            {
-                "task": {"type": "string"},
-                "base": {"type": "string", "default": "HEAD"},
-                "reset_task": {"type": "boolean", "default": True},
-            },
-            ["task"],
-        ),
-    ),
-    _tool(
-        "pmem_impact",
-        "Analyze change impact",
-        "Return changed files, touched symbols, reverse dependencies, risk, and targeted tests.",
-        _schema({"base": {"type": "string", "default": "HEAD"}}),
-    ),
-    _tool(
-        "pmem_tests",
-        "Select targeted tests",
-        "Return local test commands selected from current project changes.",
-        _schema({"base": {"type": "string", "default": "HEAD"}}),
-    ),
-    _tool(
-        "pmem_search",
-        "Search project memory",
-        "Search local graph chunks, knowledge, or rationale and return ranked bounded results.",
-        _schema(
-            {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
-                "layer": {
-                    "type": "string",
-                    "enum": ["all", "knowledge", "rationale"],
-                    "default": "all",
-                },
-            },
-            ["query"],
-        ),
-    ),
-    _tool(
-        "pmem_search_debug",
-        "Debug project memory search",
-        "Search local memory and return hybrid ranking components for each result.",
-        _schema(
-            {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
-                "layer": {
-                    "type": "string",
-                    "enum": ["all", "knowledge", "rationale"],
-                    "default": "all",
-                },
-            },
-            ["query"],
-        ),
-    ),
-    _tool(
-        "pmem_eval",
-        "Run memory evals",
-        "Run built-in or JSONL search evals against local project memory.",
-        _schema(
-            {
-                "file": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10},
-            }
-        ),
-    ),
-    _tool(
-        "pmem_audit",
-        "Audit project memory",
-        "Check memory governance issues such as stale index, conflicts, rationale without evidence, and optional secret findings.",
-        _schema({"secrets": {"type": "boolean", "default": False}}),
-    ),
-    _tool(
-        "pmem_modules",
-        "List optional modules",
-        "Return optional project-memory module state.",
-        _schema(),
-    ),
-    _tool(
-        "pmem_watch_status",
-        "Watch status",
-        "Return local watch/index freshness status without starting a long-running process.",
-        _schema(),
-    ),
-    _tool(
-        "pmem_tasks",
-        "List active project tasks",
-        "Return active multi-agent task handoffs from .agents/tasks.",
-        _schema(
-            {
-                "role": {"type": "string"},
-                "all": {"type": "boolean", "default": False},
-            }
-        ),
-    ),
-    _tool(
-        "pmem_knowledge_context",
-        "Build knowledge context",
-        "Return current project knowledge relevant to a task, with ids and paths to full Markdown records.",
-        _schema(
-            {
-                "task": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
-            },
-            ["task"],
-        ),
-    ),
-    _tool(
-        "pmem_knowledge_search",
-        "Search knowledge",
-        "Search current project knowledge records.",
-        _schema(
-            {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
-            },
-            ["query"],
-        ),
-    ),
-    _tool(
-        "pmem_knowledge_show",
-        "Show knowledge record",
-        "Return the full Markdown for one project knowledge record.",
-        _schema({"id": {"type": "string"}}, ["id"]),
-    ),
-    _tool(
-        "pmem_rationale_context",
-        "Build rationale context",
-        "Return current rationale records relevant to a task, with ids and paths to full Markdown records.",
-        _schema(
-            {
-                "task": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
-            },
-            ["task"],
-        ),
-    ),
-    _tool(
-        "pmem_rationale_search",
-        "Search rationale",
-        "Search current rationale records for decisions, rejected paths, experiments, and evidence.",
-        _schema(
-            {
-                "query": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
-            },
-            ["query"],
-        ),
-    ),
-    _tool(
-        "pmem_rationale_show",
-        "Show rationale record",
-        "Return the full Markdown for one project rationale record.",
-        _schema({"id": {"type": "string"}}, ["id"]),
-    ),
-    _tool(
-        "pmem_record_failure",
-        "Record test failure",
-        "Record a failure fingerprint from a local log file under project memory.",
-        _schema(
-            {
-                "command": {"type": "string"},
-                "log_file": {"type": "string"},
-            },
-            ["command", "log_file"],
-        ),
-        read_only=False,
-    ),
-]
-
 
 def _limit(value: Any, default: int, maximum: int) -> int:
     try:
@@ -348,10 +127,10 @@ def _tool_search(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     layer = str(args.get("layer") or "all")
     if layer == "all":
         layer_arg = None
-    elif layer in {"knowledge", "rationale"}:
+    elif layer in {"knowledge", "rationale", "human"}:
         layer_arg = layer
     else:
-        return _text_result("layer must be `all`, `knowledge`, or `rationale`.", {"layer": layer}, is_error=True)
+        return _text_result("layer must be `all`, `knowledge`, `rationale`, or `human`.", {"layer": layer}, is_error=True)
     rows = search_service(root, query, limit, layer=layer_arg)
     return _text_result(_format_search_rows(rows), {"query": query, "limit": limit, "layer": layer, "results": rows})
 
@@ -363,8 +142,8 @@ def _tool_search_debug(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     limit = _limit(args.get("limit"), 10, 50)
     layer = str(args.get("layer") or "all")
     layer_arg = None if layer == "all" else layer
-    if layer_arg not in {None, "knowledge", "rationale"}:
-        return _text_result("layer must be `all`, `knowledge`, or `rationale`.", {"layer": layer}, is_error=True)
+    if layer_arg not in {None, "knowledge", "rationale", "human"}:
+        return _text_result("layer must be `all`, `knowledge`, `rationale`, or `human`.", {"layer": layer}, is_error=True)
     rows = search_service(root, query, limit, layer=layer_arg, debug=True)
     text = _format_search_rows(rows)
     if rows:
@@ -413,6 +192,30 @@ def _tool_tasks(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     include_closed = bool(args.get("all"))
     tasks = list_tasks(root, include_closed=include_closed, role=role)
     return _text_result(format_tasks(tasks), {"tasks": [item.__dict__ for item in tasks]})
+
+
+def _tool_human_status(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    status = human_status(root)
+    return _text_result(format_human_status(status), {"human": status})
+
+
+def _tool_human_export(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    report = export_human(root)
+    return _text_result(format_human_export(report), {"human": report.__dict__})
+
+
+def _tool_human_search(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip()
+    if not query:
+        return _text_result("query is required.", {}, is_error=True)
+    limit = _limit(args.get("limit"), 10, 50)
+    rows = search_human(root, query, limit=limit)
+    return _text_result(format_human_search(rows), {"query": query, "limit": limit, "results": rows})
+
+
+def _tool_human_graph(root: Path, _: dict[str, Any]) -> dict[str, Any]:
+    report = human_graph(root)
+    return _text_result(format_human_graph(report), {"human_graph": report.__dict__})
 
 
 def _tool_knowledge_context(root: Path, args: dict[str, Any]) -> dict[str, Any]:
@@ -495,6 +298,10 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "pmem_modules": _tool_modules,
     "pmem_watch_status": _tool_watch_status,
     "pmem_tasks": _tool_tasks,
+    "pmem_human_status": _tool_human_status,
+    "pmem_human_export": _tool_human_export,
+    "pmem_human_search": _tool_human_search,
+    "pmem_human_graph": _tool_human_graph,
     "pmem_knowledge_context": _tool_knowledge_context,
     "pmem_knowledge_search": _tool_knowledge_search,
     "pmem_knowledge_show": _tool_knowledge_show,

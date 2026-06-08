@@ -140,3 +140,30 @@ def add_tasks_parser(sub: argparse._SubParsersAction, handler: CommandHandler) -
         t.add_argument("--role")
         t.add_argument("--all", action="store_true")
         t.set_defaults(func=handler)
+    t = tasks_sub.add_parser("close")
+    t.add_argument("--file", required=True)
+    t.add_argument("--summary", required=True)
+    t.add_argument("--command")
+    t.set_defaults(func=handler)
+
+
+def add_human_parser(sub: argparse._SubParsersAction, handler: CommandHandler) -> None:
+    p = sub.add_parser("human")
+    human_sub = p.add_subparsers(dest="human_command", required=True)
+
+    h = human_sub.add_parser("status")
+    h.set_defaults(func=handler)
+
+    h = human_sub.add_parser("export")
+    h.set_defaults(func=handler)
+
+    h = human_sub.add_parser("sync")
+    h.set_defaults(func=handler)
+
+    h = human_sub.add_parser("graph")
+    h.set_defaults(func=handler)
+
+    h = human_sub.add_parser("search")
+    h.add_argument("--query", required=True)
+    h.add_argument("--limit", type=int, default=10)
+    h.set_defaults(func=handler)

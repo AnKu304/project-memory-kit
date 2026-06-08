@@ -10,6 +10,16 @@ from tools.project_memory.services.doctor import doctor as doctor_service
 from tools.project_memory.services.eval_runner import format_eval, run_eval
 from tools.project_memory.services.failure_memory import record_failure
 from tools.project_memory.services.governance import audit_project, format_audit
+from tools.project_memory.services.human import (
+    export_human,
+    format_human_export,
+    format_human_graph,
+    format_human_search,
+    format_human_status,
+    human_graph,
+    human_status,
+    search_human,
+)
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.init_memory import init_memory
@@ -28,6 +38,7 @@ from tools.project_memory.services.maintenance import format_optimization, optim
 from tools.project_memory.services.mcp_config import build_mcp_config, format_mcp_config, write_mcp_config
 from tools.project_memory.mcp import serve_stdio
 from tools.project_memory.parser_sections import (
+    add_human_parser,
     add_knowledge_parser,
     add_modules_parser,
     add_rationale_parser,
@@ -46,7 +57,7 @@ from tools.project_memory.services.rationale import (
 )
 from tools.project_memory.services.search import format_search_result, search as search_service
 from tools.project_memory.services.status import format_stale, format_status, project_status
-from tools.project_memory.services.tasks import format_tasks, list_tasks
+from tools.project_memory.services.tasks import close_task, format_tasks, list_tasks
 from tools.project_memory.services.auto_index import ensure_fresh_index
 from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.version import __version__
@@ -347,11 +358,40 @@ def command_mcp_config(args: argparse.Namespace) -> int:
 
 
 def command_tasks(args: argparse.Namespace) -> int:
-    if args.tasks_command in {"list", "check"}:
-        tasks = list_tasks(root(), include_closed=args.all, role=args.role)
-        print(format_tasks(tasks), end="")
-        return 0
+    try:
+        if args.tasks_command in {"list", "check"}:
+            tasks = list_tasks(root(), include_closed=args.all, role=args.role)
+            print(format_tasks(tasks), end="")
+            return 0
+        if args.tasks_command == "close":
+            item = close_task(root(), args.file, args.summary, command=args.command)
+            print(f"task closed: {item.path}")
+            return 0
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     print("missing tasks command", file=sys.stderr)
+    return 2
+
+
+def command_human(args: argparse.Namespace) -> int:
+    try:
+        if args.human_command == "status":
+            print(format_human_status(human_status(root())), end="")
+            return 0
+        if args.human_command in {"export", "sync"}:
+            print(format_human_export(export_human(root())), end="")
+            return 0
+        if args.human_command == "graph":
+            print(format_human_graph(human_graph(root())), end="")
+            return 0
+        if args.human_command == "search":
+            print(format_human_search(search_human(root(), args.query, args.limit)), end="")
+            return 0
+    except (RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print("missing human command", file=sys.stderr)
     return 2
 
 
@@ -416,7 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("search")
     p.add_argument("--query", required=True)
     p.add_argument("--limit", type=int, default=10)
-    p.add_argument("--layer", choices=["knowledge", "rationale"], default=None)
+    p.add_argument("--layer", choices=["knowledge", "rationale", "human"], default=None)
     p.add_argument("--debug", action="store_true")
     p.set_defaults(func=command_search)
 
@@ -466,6 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=command_mcp_config)
 
     add_tasks_parser(sub, command_tasks)
+    add_human_parser(sub, command_human)
 
     p = sub.add_parser("version")
     p.set_defaults(func=command_version)

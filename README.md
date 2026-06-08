@@ -192,6 +192,12 @@ pmem version
 ./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem tasks check
 ./pmem tasks list
+./pmem tasks close --file .agents/tasks/example.md --summary "Done"
+./pmem human status
+./pmem human export
+./pmem human sync
+./pmem human search --query "design rules"
+./pmem human graph
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
@@ -212,6 +218,7 @@ pmem version
 ./pmem search --query "payment validation" --limit 10 --debug
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
+./pmem search --query "design principles" --layer human
 ./pmem watch --once
 ./pmem watch --interval 5 --max-runs 1
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
@@ -255,6 +262,10 @@ pmem_audit
 pmem_modules
 pmem_watch_status
 pmem_tasks
+pmem_human_status
+pmem_human_export
+pmem_human_search
+pmem_human_graph
 pmem_knowledge_context
 pmem_knowledge_search
 pmem_knowledge_show
@@ -290,6 +301,9 @@ MCP удобен для коротких structured-ответов агенту.
 - Для JS/TS используется настраиваемый backend. По умолчанию `auto`: TypeScript compiler API, если в проекте есть `node` и `typescript`; иначе встроенный lexical parser. `tree_sitter` и `lsp` зарезервированы как optional backends без обязательных зависимостей.
 - Локальный MCP server предоставляет агентам tools для doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale поверх того же `pmem` runtime.
 - `tasks check` показывает открытые handoff/user tasks из `.agents/tasks/`, чтобы агент не пропускал задачи от других чатов.
+- `tasks close` закрывает task-файл, добавляет completion block и переиндексирует измененную задачу.
+- `human` module создает Obsidian-like Markdown layer поверх current knowledge/rationale: `.project-memory/human/index.md`, generated notes, `graph.mmd` и `graph.json`.
+- `search --layer human` ищет по generated human notes.
 - `mcp-config --client claude --write` может записать `.mcp.json`, сохранив существующие настройки.
 - Секреты, `.env`, dependency dirs, build outputs, caches и binary files не индексируются.
 
@@ -303,12 +317,17 @@ modules:
     enabled: false
 ```
 
-`human` выключен по умолчанию. Включение создает `.project-memory/human/`; выключение не удаляет данные:
+`human` выключен по умолчанию. Включение создает `.project-memory/human/`; выключение не удаляет данные.
+
+Human layer нужен, если хочется человекочитаемую Obsidian-like витрину поверх проектной памяти. Он не заменяет `knowledge` и `rationale`; он экспортирует их current-записи в Markdown с frontmatter, backlinks и визуальным graph:
 
 ```bash
 ./pmem modules list
 ./pmem modules set human --enabled true
 ./pmem modules set human --enabled false
+./pmem human export
+./pmem human graph
+./pmem human search --query "SEO rules"
 ```
 
 ## Memory Evals
@@ -331,6 +350,7 @@ modules:
 
 Кратко:
 
+- `0.11.0`: Human/Obsidian-like layer, `human export/sync/search/graph`, `search --layer human`, MCP human tools, `tasks close`.
 - `0.10.0`: npm package smoke, tarball validation, `prepack`, строгий package `files`, проверка Python 3.11+ в Node wrapper, npm distribution guide.
 - `0.9.0`: безопасное добавление профилей при upgrade, workspace/package aliases для JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.
 - `0.8.0`: npm/npx distribution, профили `Codex`/`Claude`/`Multi-agent`, Claude Code структура, CI, `audit --secrets`, `optimize`, `mcp-config`.

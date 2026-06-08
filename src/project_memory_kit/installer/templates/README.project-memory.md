@@ -35,6 +35,7 @@ Useful checks:
 ./pmem audit --secrets
 ./pmem optimize
 ./pmem tasks check
+./pmem human status
 ./pmem tests --base HEAD --explain
 ./pmem watch --once
 ```
@@ -48,6 +49,17 @@ modules:
 ```
 
 `human` is disabled by default. Enabling it creates `human/`; disabling it keeps existing files.
+
+When enabled, Human export creates an Obsidian-like Markdown view over current knowledge and rationale:
+
+```bash
+./pmem modules set human --enabled true
+./pmem human export
+./pmem human graph
+./pmem human search --query "<query>"
+```
+
+Generated files include `human/index.md`, `human/knowledge/**/*.md`, `human/rationale/**/*.md`, `human/graph.mmd`, and `human/graph.json`.
 
 Commit:
 

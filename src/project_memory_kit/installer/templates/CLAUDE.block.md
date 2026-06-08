@@ -34,6 +34,12 @@ If `.agents/tasks/` exists, check active user tasks and handoffs before starting
 ./pmem tasks check
 ```
 
+When a task file has been completed, close it instead of leaving it active:
+
+```bash
+./pmem tasks close --file "<task md path>" --summary "<what changed>"
+```
+
 For research, architecture, SEO, design, UX, product, content, or principle-heavy work, also run:
 
 ```bash
@@ -55,5 +61,12 @@ After editing, run:
 ```
 
 Use `./pmem search --query "<task terms>" --debug` when retrieved memory looks incomplete. Use `./pmem audit --secrets` before commits that touched config, auth, env handling, integrations, or credentials.
+
+If the optional human layer is enabled, refresh it after durable knowledge or rationale changes:
+
+```bash
+./pmem human export
+./pmem human graph
+```
 
 Never index, print, or store secrets.

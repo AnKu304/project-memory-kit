@@ -192,6 +192,12 @@ Installed runtime:
 ./pmem eval --file .project-memory/evals/search.jsonl
 ./pmem tasks check
 ./pmem tasks list
+./pmem tasks close --file .agents/tasks/example.md --summary "Done"
+./pmem human status
+./pmem human export
+./pmem human sync
+./pmem human search --query "design rules"
+./pmem human graph
 ./pmem knowledge add --type research --title "Resource mechanics" --file notes/research.md
 ./pmem knowledge update --id resource-mechanics --file notes/research.md
 ./pmem knowledge search --query "SEO rules"
@@ -212,6 +218,7 @@ Installed runtime:
 ./pmem search --query "payment validation" --limit 10 --debug
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
+./pmem search --query "design principles" --layer human
 ./pmem watch --once
 ./pmem watch --interval 5 --max-runs 1
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
@@ -255,6 +262,10 @@ pmem_audit
 pmem_modules
 pmem_watch_status
 pmem_tasks
+pmem_human_status
+pmem_human_export
+pmem_human_search
+pmem_human_graph
 pmem_knowledge_context
 pmem_knowledge_search
 pmem_knowledge_show
@@ -290,6 +301,9 @@ MCP is useful for short structured tool responses to agents. The CLI commands re
 - JS/TS uses a configurable backend. The default is `auto`: TypeScript compiler API when `node` and `typescript` are available in the project, otherwise the built-in lexical parser. `tree_sitter` and `lsp` are reserved optional backends without mandatory dependencies.
 - A local MCP server exposes doctor/status/index/context/impact/search/search_debug/tests/eval/audit/modules/tasks/knowledge/rationale tools over the same `pmem` runtime.
 - `tasks check` shows open handoff/user tasks from `.agents/tasks/`, so agents do not miss work left by another chat.
+- `tasks close` closes a task file, appends a completion block, and re-indexes the changed task.
+- The `human` module creates an Obsidian-like Markdown layer over current knowledge/rationale: `.project-memory/human/index.md`, generated notes, `graph.mmd`, and `graph.json`.
+- `search --layer human` searches generated human notes.
 - `mcp-config --client claude --write` can write `.mcp.json` while preserving existing settings.
 - Secrets, `.env` files, dependency directories, build outputs, caches, and binary files are not indexed.
 
@@ -303,12 +317,17 @@ modules:
     enabled: false
 ```
 
-`human` is disabled by default. Enabling it creates `.project-memory/human/`; disabling it does not delete data:
+`human` is disabled by default. Enabling it creates `.project-memory/human/`; disabling it does not delete data.
+
+The Human layer is for a human-readable Obsidian-like view over project memory. It does not replace `knowledge` or `rationale`; it exports their current records into Markdown with frontmatter, backlinks, and a visual graph:
 
 ```bash
 ./pmem modules list
 ./pmem modules set human --enabled true
 ./pmem modules set human --enabled false
+./pmem human export
+./pmem human graph
+./pmem human search --query "SEO rules"
 ```
 
 ## Memory Evals
@@ -331,6 +350,7 @@ Run:
 
 Short version:
 
+- `0.11.0`: Human/Obsidian-like layer, `human export/sync/search/graph`, `search --layer human`, MCP human tools, `tasks close`.
 - `0.10.0`: npm package smoke, tarball validation, `prepack`, strict package `files`, Python 3.11+ check in the Node wrapper, npm distribution guide.
 - `0.9.0`: safe profile upgrades, workspace/package aliases for JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.
 - `0.8.0`: npm/npx distribution, `Codex`/`Claude`/`Multi-agent` profiles, Claude Code structure, CI, `audit --secrets`, `optimize`, `mcp-config`.
