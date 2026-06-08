@@ -397,6 +397,7 @@ Linear bridge выключен по умолчанию и не требует Li
 
 Кратко:
 
+- `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions переведен на Node 24-capable actions и Node 22/24 matrix.
 - `0.19.0`: MCP Task Write Tools; MCP может создавать, назначать и закрывать `.agents/tasks/`.
 - `0.18.0`: Install Wizard; `pmem init --interactive` для выбора профиля и optional модулей.
 - `0.17.0`: Human Graph Viewer; статический `human graph --html` для просмотра Human-графа.

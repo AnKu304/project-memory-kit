@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.20.0
+
+Added:
+
+- CI Runtime Warning Cleanup.
+- Очистка предупреждений CI.
+
+Updated:
+
+- GitHub Actions now uses Node 24-capable actions: `actions/checkout@v6`, `actions/setup-python@v6`, and `actions/setup-node@v6`.
+- CI opts into the JavaScript action Node 24 runtime with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`.
+- The Node test matrix now covers Node 22 and Node 24.
+
+Removed:
+
+- Node 20 from the CI test matrix.
+
+Better than 0.19.0:
+
+- CI no longer depends on deprecated Node 20 action runtimes.
+- The workflow tests current Node LTS/current runtime paths while keeping the Python 3.11/3.12 matrix.
+
 ## 0.19.0
 
 Added:

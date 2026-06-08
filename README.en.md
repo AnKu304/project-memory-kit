@@ -396,6 +396,7 @@ Run:
 
 Short version:
 
+- `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions moved to Node 24-capable actions and a Node 22/24 matrix.
 - `0.19.0`: MCP Task Write Tools; MCP can create, assign, and close `.agents/tasks/`.
 - `0.18.0`: Install Wizard; `pmem init --interactive` for choosing the profile and optional modules.
 - `0.17.0`: Human Graph Viewer; static `human graph --html` for viewing the Human graph.
