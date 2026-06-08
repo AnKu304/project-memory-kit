@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sqlite3
@@ -108,6 +109,45 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(watch.returncode, 0, watch.stderr)
             self.assertIn("watch check", watch.stdout)
+
+    def test_watch_serve_indexes_hash_changed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            path = root / "app.py"
+            path.write_text("def watch_token():\n    return 'before'\n", encoding="utf-8")
+            subprocess.run(
+                [str(root / "pmem"), "index", "--mode", "full"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            path.write_text("def watch_token():\n    return 'after'\n", encoding="utf-8")
+
+            watch = subprocess.run(
+                [str(root / "pmem"), "watch", "--serve", "--interval", "0", "--max-runs", "1"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(watch.returncode, 0, watch.stderr)
+            self.assertIn("watch serve", watch.stdout)
+            self.assertIn("watch check 1: indexed", watch.stdout)
+            expected_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                row = conn.execute("SELECT hash FROM file_index_state WHERE path = 'app.py'").fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(row[0], expected_hash)
 
     def test_search_auto_indexes_and_uses_bm25(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

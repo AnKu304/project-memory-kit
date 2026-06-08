@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.14.0
+
+Added:
+
+- Real File Watcher.
+- Настоящий локальный наблюдатель файлов.
+- `./pmem watch --serve` for an explicit long-running local polling watcher.
+
+Updated:
+
+- `./pmem watch` now performs one safe check by default instead of starting an unbounded loop.
+- Watch output includes numbered checks.
+- Existing `--interval` and `--max-runs` behavior is preserved for bounded watcher runs.
+
+Removed:
+
+- Nothing.
+
+Better than 0.13.0:
+
+- Agents can keep the local index fresh during work without relying on chat context.
+- Running `./pmem watch` directly no longer risks an accidental infinite command.
+
 ## 0.13.0
 
 Added:

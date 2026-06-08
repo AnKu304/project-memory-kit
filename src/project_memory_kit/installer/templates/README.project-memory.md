@@ -38,7 +38,9 @@ Useful checks:
 ./pmem tasks linear status
 ./pmem human status
 ./pmem tests --base HEAD --explain
+./pmem watch
 ./pmem watch --once
+./pmem watch --serve --interval 5
 ```
 
 Optional modules are controlled in `config.yaml`:

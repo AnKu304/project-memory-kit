@@ -222,8 +222,10 @@ pmem version
 ./pmem search --query "pricing SEO" --layer knowledge
 ./pmem search --query "why sqlite" --layer rationale
 ./pmem search --query "design principles" --layer human
+./pmem watch
 ./pmem watch --once
 ./pmem watch --interval 5 --max-runs 1
+./pmem watch --serve --interval 5
 ./pmem record-failure --command "npm test" --log-file ".project-memory/logs/test.log"
 ./pmem mcp --root .
 ./pmem mcp-config --root .
@@ -294,7 +296,7 @@ MCP удобен для коротких structured-ответов агенту.
 - Hybrid search объединяет SQLite FTS5 `bm25()`, vector score, совпадения терминов, path, graph proximity, confidence, layer и recency.
 - `./pmem search --debug` показывает компоненты ранжирования.
 - `search`, `context`, `impact` и `tests` автоматически запускают локальный `changed` index, если база пустая или stale.
-- `status`, `stale`, `audit`, `eval`, `tests --explain` и `watch --once` помогают проверять качество памяти локально.
+- `status`, `stale`, `audit`, `eval`, `tests --explain` и `watch` помогают проверять качество памяти локально.
 - `audit --secrets` ищет возможные секреты в проектных файлах и не печатает найденные значения.
 - `optimize` запускает локальное обслуживание SQLite.
 - Полные записи открываются только при необходимости.
@@ -374,6 +376,7 @@ Linear bridge выключен по умолчанию и не требует Li
 
 Кратко:
 
+- `0.14.0`: Real File Watcher; локальный polling watcher по hash с явным `watch --serve`.
 - `0.13.0`: Linear Sync; локальный bridge для экспорта/импорта задач Linear без обязательных зависимостей.
 - `0.12.0`: Bidirectional Human Sync; двусторонняя синхронизация Human-слоя с conflict detection.
 - `0.11.0`: Human/Obsidian-like layer, `human export/sync/search/graph`, `search --layer human`, MCP human tools, `tasks close`.

@@ -160,19 +160,32 @@ def command_stale(args: argparse.Namespace) -> int:
 
 
 def command_watch(args: argparse.Namespace) -> int:
-    runs = 1 if args.once else args.max_runs
+    if args.once:
+        runs = 1
+    elif args.max_runs is not None:
+        runs = args.max_runs
+    else:
+        runs = None if args.serve else 1
+    interval = max(float(args.interval), 0.1)
     count = 0
-    while runs is None or count < runs:
-        report = ensure_fresh_index(root(), "watch")
-        if report:
-            print("watch check: indexed")
-            print(report)
-        else:
-            print("watch check: fresh")
-        count += 1
-        if args.once or (runs is not None and count >= runs):
-            break
-        time.sleep(max(float(args.interval), 0.1))
+    if args.serve:
+        limit = "unbounded" if runs is None else str(runs)
+        print(f"watch serve: interval={interval:g} max_runs={limit}")
+    try:
+        while runs is None or count < runs:
+            report = ensure_fresh_index(root(), "watch")
+            label = f"watch check {count + 1}"
+            if report:
+                print(f"{label}: indexed")
+                print(report)
+            else:
+                print(f"{label}: fresh")
+            count += 1
+            if runs is not None and count >= runs:
+                break
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("watch serve: stopped")
     return 0
 
 
@@ -505,6 +518,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("watch")
     p.add_argument("--once", action="store_true")
+    p.add_argument("--serve", action="store_true")
     p.add_argument("--interval", type=float, default=5.0)
     p.add_argument("--max-runs", type=int)
     p.set_defaults(func=command_watch)
