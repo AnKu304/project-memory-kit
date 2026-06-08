@@ -16,9 +16,11 @@ from tools.project_memory.services.human import (
     format_human_graph,
     format_human_search,
     format_human_status,
+    format_human_sync,
     human_graph,
     human_status,
     search_human,
+    sync_human,
 )
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
@@ -379,9 +381,13 @@ def command_human(args: argparse.Namespace) -> int:
         if args.human_command == "status":
             print(format_human_status(human_status(root())), end="")
             return 0
-        if args.human_command in {"export", "sync"}:
+        if args.human_command == "export":
             print(format_human_export(export_human(root())), end="")
             return 0
+        if args.human_command == "sync":
+            report = sync_human(root())
+            print(format_human_sync(report), end="")
+            return 1 if report.conflicts else 0
         if args.human_command == "graph":
             print(format_human_graph(human_graph(root())), end="")
             return 0

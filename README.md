@@ -326,9 +326,12 @@ Human layer нужен, если хочется человекочитаемую
 ./pmem modules set human --enabled true
 ./pmem modules set human --enabled false
 ./pmem human export
+./pmem human sync
 ./pmem human graph
 ./pmem human search --query "SEO rules"
 ```
+
+`human sync` подтягивает ручные правки из generated Human notes обратно в `knowledge` или `rationale`. Если Human note и исходная запись изменились после последнего export, команда показывает conflict и не перезаписывает данные молча.
 
 ## Memory Evals
 
@@ -350,6 +353,7 @@ Human layer нужен, если хочется человекочитаемую
 
 Кратко:
 
+- `0.12.0`: Bidirectional Human Sync; двусторонняя синхронизация Human-слоя с conflict detection.
 - `0.11.0`: Human/Obsidian-like layer, `human export/sync/search/graph`, `search --layer human`, MCP human tools, `tasks close`.
 - `0.10.0`: npm package smoke, tarball validation, `prepack`, строгий package `files`, проверка Python 3.11+ в Node wrapper, npm distribution guide.
 - `0.9.0`: безопасное добавление профилей при upgrade, workspace/package aliases для JS/TS, Next.js route metadata, `.agents/tasks/`, `pmem tasks`, Claude `.mcp.json` writer, secret allowlist/entropy/JWT scan, eval templates, quality guards.

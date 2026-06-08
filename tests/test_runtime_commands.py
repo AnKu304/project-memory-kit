@@ -506,6 +506,163 @@ class RuntimeCommandsTest(unittest.TestCase):
                 conn.close()
             self.assertGreater(row[0], 0)
 
+    def test_human_sync_updates_edited_knowledge_note(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback"),
+                encoding="utf-8",
+            )
+            notes = root / "notes"
+            notes.mkdir()
+            source = notes / "seo.md"
+            source.write_text("# SEO Rules\n\nUse initial-human-sync-token.\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "add",
+                    "--type",
+                    "seo",
+                    "--title",
+                    "SEO Rules",
+                    "--file",
+                    "notes/seo.md",
+                ],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "human", "export"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            human_note = root / ".project-memory/human/knowledge/seo-rules.md"
+            human_text = human_note.read_text(encoding="utf-8")
+            human_note.write_text(
+                human_text.replace("Use initial-human-sync-token.", "Use edited-human-sync-token."),
+                encoding="utf-8",
+            )
+            sync = subprocess.run(
+                [str(root / "pmem"), "human", "sync"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(sync.returncode, 0, sync.stderr)
+            self.assertIn("synced: 1", sync.stdout)
+
+            show = subprocess.run(
+                [str(root / "pmem"), "knowledge", "show", "--id", "seo-rules"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(show.returncode, 0, show.stderr)
+            self.assertIn("edited-human-sync-token", show.stdout)
+            self.assertIn("version: 2", show.stdout)
+            self.assertIn("note_body_hash:", human_note.read_text(encoding="utf-8"))
+
+    def test_human_sync_reports_conflict_when_source_and_human_note_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            notes = root / "notes"
+            notes.mkdir()
+            source = notes / "decision.md"
+            source.write_text("# Storage Decision\n\nUse initial-conflict-token.\n", encoding="utf-8")
+            subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "rationale",
+                    "add",
+                    "--type",
+                    "decision",
+                    "--title",
+                    "Storage Decision",
+                    "--file",
+                    "notes/decision.md",
+                    "--evidence",
+                    "test evidence",
+                ],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            subprocess.run(
+                [str(root / "pmem"), "human", "export"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            human_note = root / ".project-memory/human/rationale/storage-decision.md"
+            human_note.write_text(
+                human_note.read_text(encoding="utf-8").replace("initial-conflict-token", "human-conflict-token"),
+                encoding="utf-8",
+            )
+            source.write_text("# Storage Decision\n\nUse source-conflict-token.\n", encoding="utf-8")
+            subprocess.run(
+                [str(root / "pmem"), "rationale", "update", "--id", "storage-decision", "--file", "notes/decision.md"],
+                cwd=root,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            sync = subprocess.run(
+                [str(root / "pmem"), "human", "sync"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(sync.returncode, 1)
+            self.assertIn("conflicts:", sync.stdout)
+            self.assertIn("human note and source record both changed", sync.stdout)
+
+            show = subprocess.run(
+                [str(root / "pmem"), "rationale", "show", "--id", "storage-decision"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(show.returncode, 0, show.stderr)
+            self.assertIn("source-conflict-token", show.stdout)
+            self.assertNotIn("human-conflict-token", show.stdout)
+
     def test_human_graph_exports_mermaid_and_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

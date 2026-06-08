@@ -55,11 +55,13 @@ When enabled, Human export creates an Obsidian-like Markdown view over current k
 ```bash
 ./pmem modules set human --enabled true
 ./pmem human export
+./pmem human sync
 ./pmem human graph
 ./pmem human search --query "<query>"
 ```
 
 Generated files include `human/index.md`, `human/knowledge/**/*.md`, `human/rationale/**/*.md`, `human/graph.mmd`, and `human/graph.json`.
+`human sync` can pull manual edits from generated Human notes back into source memory records, and it reports conflicts when both sides changed.
 
 Commit:
 

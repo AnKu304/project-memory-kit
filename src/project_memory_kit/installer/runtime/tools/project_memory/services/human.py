@@ -9,7 +9,9 @@ from typing import Any
 from tools.project_memory.config import config_path
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_text, stable_id
+from tools.project_memory.services.knowledge import update_knowledge
 from tools.project_memory.services.modules import module_enabled
+from tools.project_memory.services.rationale import update_rationale
 from tools.project_memory.services.search import format_search_result, search as search_service
 
 
@@ -32,6 +34,17 @@ class HumanGraphReport:
     mermaid_path: str
     nodes: int
     edges: int
+
+
+@dataclass(frozen=True)
+class HumanSyncReport:
+    enabled: bool
+    path: str
+    synced: int
+    skipped: int
+    conflicts: list[str]
+    generated: int
+    indexed: int
 
 
 def _store(root: Path) -> SQLiteGraphStore:
@@ -69,6 +82,38 @@ def _strip_frontmatter(content: str) -> str:
         return content
     end = content.find("\n", marker + 4)
     return "" if end == -1 else content[end + 1 :]
+
+
+def _frontmatter_value(content: str, name: str) -> str:
+    if not content.startswith("---\n"):
+        return ""
+    marker = content.find("\n---", 4)
+    if marker == -1:
+        return ""
+    for line in content[4:marker].splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() != name:
+            continue
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            try:
+                return str(json.loads(value))
+            except json.JSONDecodeError:
+                return value.strip('"')
+        return value
+    return ""
+
+
+def _note_body(content: str) -> str:
+    body = _strip_frontmatter(content)
+    marker = re.search(r"(?m)^##\s+Note\s*$", body)
+    if not marker:
+        return body.strip()
+    return body[marker.end() :].strip()
+
+
+def _body_hash(content: str) -> str:
+    return sha256_text(content.strip())
 
 
 def _read_source(root: Path, rel_path: str) -> str:
@@ -125,7 +170,7 @@ def _clear_generated_files(root: Path) -> int:
     return removed
 
 
-def _frontmatter(layer: str, row: dict[str, Any], rel_path: str) -> str:
+def _frontmatter(layer: str, row: dict[str, Any], rel_path: str, body: str) -> str:
     tags = _json_list(row.get("tags_json"))
     lines = [
         "---",
@@ -133,6 +178,8 @@ def _frontmatter(layer: str, row: dict[str, Any], rel_path: str) -> str:
         f"source_layer: {_quoted(layer)}",
         f"source_id: {_quoted(row['id'])}",
         f"source_path: {_quoted(row['path'])}",
+        f"source_content_hash: {_quoted(row.get('content_hash'))}",
+        f"note_body_hash: {_quoted(_body_hash(_strip_frontmatter(body)))}",
         f"title: {_quoted(row['title'])}",
         f"status: {_quoted(row['status'])}",
         f"version: {int(row['version'])}",
@@ -150,7 +197,7 @@ def _render_doc(layer: str, row: dict[str, Any], body: str, rel_path: str) -> st
     source_id = str(row["id"])
     source_path = str(row["path"])
     return (
-        _frontmatter(layer, row, rel_path)
+        _frontmatter(layer, row, rel_path, body)
         + f"# {title}\n\n"
         + "## PMEM Source\n\n"
         + f"- Source: `{layer}:{source_id}`\n"
@@ -170,6 +217,28 @@ def _current_rows(store: SQLiteGraphStore, table: str) -> list[dict[str, Any]]:
             f"SELECT * FROM {table} WHERE status = 'current' ORDER BY updated_at DESC, id ASC"
         )
     ]
+
+
+def _current_row(store: SQLiteGraphStore, layer: str, entry_id: str) -> dict[str, Any] | None:
+    table = "knowledge_entries" if layer == "knowledge" else "rationale_entries"
+    rows = store.query(f"SELECT * FROM {table} WHERE id = ? AND status = 'current'", (entry_id,))
+    return dict(rows[0]) if rows else None
+
+
+def _sync_source_path(root: Path, layer: str, entry_id: str) -> Path:
+    path = root / ".project-memory" / "tmp" / "human-sync" / layer / f"{entry_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _human_note_paths(root: Path) -> list[Path]:
+    base = _human_dir(root)
+    paths: list[Path] = []
+    for layer in GENERATED_DIRS:
+        folder = base / layer
+        if folder.exists():
+            paths.extend(sorted(folder.rglob("*.md")))
+    return paths
 
 
 def _write_docs(root: Path, store: SQLiteGraphStore) -> list[tuple[str, str, str, str]]:
@@ -352,6 +421,80 @@ def format_human_export(report: HumanExportReport) -> str:
         f"- removed: {report.removed}\n"
         f"- indexed_chunks: {report.indexed}\n"
     )
+
+
+def sync_human(root: Path) -> HumanSyncReport:
+    _require_enabled(root)
+    store = _store(root)
+    conflicts: list[str] = []
+    pending: list[tuple[str, str, Path, str]] = []
+    skipped = 0
+
+    for path in _human_note_paths(root):
+        content = path.read_text(encoding="utf-8", errors="replace")
+        layer = _frontmatter_value(content, "source_layer")
+        entry_id = _frontmatter_value(content, "source_id")
+        exported_hash = _frontmatter_value(content, "source_content_hash")
+        exported_body_hash = _frontmatter_value(content, "note_body_hash")
+        if layer not in GENERATED_DIRS or not entry_id:
+            skipped += 1
+            continue
+        current = _current_row(store, layer, entry_id)
+        if not current:
+            conflicts.append(f"{path.relative_to(root)}: source record not found")
+            continue
+        body = _note_body(content)
+        if not exported_body_hash:
+            try:
+                exported_body_hash = _body_hash(_strip_frontmatter(_read_source(root, str(current["path"]))))
+            except FileNotFoundError:
+                exported_body_hash = ""
+        human_changed = bool(exported_body_hash) and _body_hash(body) != exported_body_hash
+        source_changed = bool(exported_hash) and str(current.get("content_hash") or "") != exported_hash
+        if human_changed and source_changed:
+            conflicts.append(f"{path.relative_to(root)}: human note and source record both changed")
+            continue
+        if not human_changed:
+            skipped += 1
+            continue
+        source_path = _sync_source_path(root, layer, entry_id)
+        source_path.write_text(body.strip() + "\n", encoding="utf-8")
+        pending.append((layer, entry_id, source_path, str(path.relative_to(root))))
+
+    if conflicts:
+        return HumanSyncReport(True, str(_human_dir(root)), 0, skipped, conflicts, 0, 0)
+
+    for layer, entry_id, source_path, _ in pending:
+        if layer == "knowledge":
+            update_knowledge(root, entry_id, source_path)
+        else:
+            update_rationale(root, entry_id, source_path)
+
+    export_report = export_human(root)
+    return HumanSyncReport(
+        True,
+        str(_human_dir(root)),
+        len(pending),
+        skipped,
+        [],
+        export_report.generated,
+        export_report.indexed,
+    )
+
+
+def format_human_sync(report: HumanSyncReport) -> str:
+    lines = [
+        "Human sync",
+        f"- path: {report.path}",
+        f"- synced: {report.synced}",
+        f"- skipped: {report.skipped}",
+        f"- generated: {report.generated}",
+        f"- indexed_chunks: {report.indexed}",
+    ]
+    if report.conflicts:
+        lines.append("- conflicts:")
+        lines.extend(f"  - {item}" for item in report.conflicts)
+    return "\n".join(lines) + "\n"
 
 
 def search_human(root: Path, query: str, limit: int = 10) -> list[dict[str, Any]]:

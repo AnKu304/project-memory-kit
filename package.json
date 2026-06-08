@@ -1,6 +1,6 @@
 {
   "name": "@anku/project-memory-kit",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Local-first project memory installer for coding agents",
   "license": "MIT",
   "author": "AnKu304",

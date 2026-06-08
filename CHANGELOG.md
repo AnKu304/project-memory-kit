@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.12.0
+
+Added:
+
+- Bidirectional Human Sync.
+- Двусторонняя синхронизация Human-слоя.
+- `./pmem human sync` now pulls manual edits from generated Human notes back into source `knowledge` or `rationale` records.
+- Human notes now include source and body hash metadata for sync safety.
+- Conflict detection when both a Human note and its source memory record changed after export.
+
+Updated:
+
+- Human export keeps sync metadata in generated Markdown frontmatter.
+- Human sync regenerates and re-indexes the Human layer after successful source updates.
+
+Removed:
+
+- Nothing.
+
+Better than 0.11.0:
+
+- The Human layer is no longer export-only.
+- Manual edits in the human-readable layer can become durable project memory.
+- Conflicting edits are visible instead of being overwritten silently.
+
 ## 0.11.0
 
 Added:
