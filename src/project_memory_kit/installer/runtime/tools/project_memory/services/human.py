@@ -9,6 +9,7 @@ from typing import Any
 from tools.project_memory.config import config_path
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_text, stable_id
+from tools.project_memory.services.human_graph import build_human_graph_rows, write_human_graph_mermaid
 from tools.project_memory.services.human_graph_html import render_human_graph_html
 from tools.project_memory.services.knowledge import update_knowledge
 from tools.project_memory.services.modules import module_enabled
@@ -325,70 +326,16 @@ def _index_docs(root: Path, store: SQLiteGraphStore, entries: list[tuple[str, st
     return indexed
 
 
-def _graph_node_id(layer: str, entry_id: str) -> str:
-    return f"{layer}:{entry_id}"
-
-
-def _mermaid_id(value: str) -> str:
-    return "n_" + re.sub(r"[^A-Za-z0-9_]+", "_", value).strip("_")
-
-
-def _graph_rows(store: SQLiteGraphStore) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    nodes: list[dict[str, Any]] = []
-    current: set[str] = set()
-    for layer, table in [("knowledge", "knowledge_entries"), ("rationale", "rationale_entries")]:
-        for row in _current_rows(store, table):
-            node_id = _graph_node_id(layer, str(row["id"]))
-            current.add(node_id)
-            nodes.append(
-                {
-                    "id": node_id,
-                    "layer": layer,
-                    "title": row["title"],
-                    "type": row["type"],
-                    "status": row["status"],
-                    "path": row["path"],
-                }
-            )
-
-    edges: list[dict[str, Any]] = []
-    for layer, table, link_table, fk in [
-        ("knowledge", "knowledge_entries", "knowledge_links", "knowledge_id"),
-        ("rationale", "rationale_entries", "rationale_links", "rationale_id"),
-    ]:
-        for row in store.query(f"SELECT {fk}, relation, target FROM {link_table} ORDER BY {fk}, target"):
-            source_id = _graph_node_id(layer, str(row[fk]))
-            if source_id not in current:
-                continue
-            target = str(row["target"])
-            target_id = target if ":" in target else _graph_node_id("external", target)
-            if target_id not in current and not any(node["id"] == target_id for node in nodes):
-                nodes.append({"id": target_id, "layer": "external", "title": target, "type": "external", "path": ""})
-            edges.append({"source": source_id, "target": target_id, "relation": row["relation"]})
-    return nodes, edges
-
-
-def _write_mermaid(path: Path, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
-    lines = ["graph LR"]
-    for node in nodes:
-        label = f"{node['layer']}: {node['title']}".replace('"', "'")
-        lines.append(f"  {_mermaid_id(str(node['id']))}[\"{label}\"]")
-    for edge in edges:
-        relation = str(edge["relation"]).replace('"', "'")
-        lines.append(f"  {_mermaid_id(str(edge['source']))} -- \"{relation}\" --> {_mermaid_id(str(edge['target']))}")
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def human_graph(root: Path) -> HumanGraphReport:
     _require_enabled(root)
     store = _store(root)
     base = _human_dir(root)
     base.mkdir(parents=True, exist_ok=True)
-    nodes, edges = _graph_rows(store)
+    nodes, edges = build_human_graph_rows(store)
     json_path = base / "graph.json"
     mermaid_path = base / "graph.mmd"
     json_path.write_text(json.dumps({"nodes": nodes, "edges": edges}, ensure_ascii=False, indent=2), encoding="utf-8")
-    _write_mermaid(mermaid_path, nodes, edges)
+    write_human_graph_mermaid(mermaid_path, nodes, edges)
     return HumanGraphReport(True, str(json_path), str(mermaid_path), len(nodes), len(edges))
 
 

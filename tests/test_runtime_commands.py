@@ -980,7 +980,12 @@ class RuntimeCommandsTest(unittest.TestCase):
             install_project(root)
             notes = root / "notes"
             notes.mkdir()
-            (notes / "knowledge.md").write_text("# Product Architecture\n\nUse local first memory.\n", encoding="utf-8")
+            (notes / "knowledge.md").write_text(
+                "# Product Architecture\n\n"
+                "Use local first memory. UI/UX and impact/tests/release shorthands are not file references.\n"
+                "Read https://example.com/docs when a URL is intentional.\n",
+                encoding="utf-8",
+            )
             (notes / "rationale.md").write_text("# Use SQLite\n\nSQLite keeps the tool local.\n", encoding="utf-8")
 
             rationale = subprocess.run(
@@ -1025,6 +1030,25 @@ class RuntimeCommandsTest(unittest.TestCase):
             )
             self.assertEqual(knowledge.returncode, 0, knowledge.stderr)
 
+            rationale_update = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "rationale",
+                    "update",
+                    "--id",
+                    "use-sqlite",
+                    "--file",
+                    "notes/rationale.md",
+                    "--evidence",
+                    ".project-memory/knowledge/architecture/product-architecture.md",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(rationale_update.returncode, 0, rationale_update.stderr)
+
             subprocess.run(
                 [str(root / "pmem"), "modules", "set", "human", "--enabled", "true"],
                 cwd=root,
@@ -1055,13 +1079,22 @@ class RuntimeCommandsTest(unittest.TestCase):
             node_ids = {node["id"] for node in graph_json["nodes"]}
             self.assertIn("knowledge:product-architecture", node_ids)
             self.assertIn("rationale:use-sqlite", node_ids)
+            self.assertIn("external:https://example.com/docs", node_ids)
+            self.assertNotIn("external:UI/UX", node_ids)
+            self.assertNotIn("external:tests/release", node_ids)
+            self.assertNotIn("external://example.com/docs", node_ids)
             self.assertIn(
                 {"source": "knowledge:product-architecture", "target": "rationale:use-sqlite", "relation": "depends_on"},
+                graph_json["edges"],
+            )
+            self.assertIn(
+                {"source": "rationale:use-sqlite", "target": "knowledge:product-architecture", "relation": "evidence"},
                 graph_json["edges"],
             )
             mermaid = (root / ".project-memory/human/graph.mmd").read_text(encoding="utf-8")
             self.assertIn("graph LR", mermaid)
             self.assertIn("depends_on", mermaid)
+            self.assertIn("evidence", mermaid)
 
             graph_html = subprocess.run(
                 [str(root / "pmem"), "human", "graph", "--html"],
@@ -1077,6 +1110,8 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("layerFilter", html)
             self.assertIn("typeFilter", html)
             self.assertIn("statusFilter", html)
+            self.assertIn("modeButton", html)
+            self.assertIn("requestedMode", html)
             self.assertIn("knowledge:product-architecture", html)
 
     def test_mcp_human_tools_export_search_and_graph(self) -> None:
