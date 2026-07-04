@@ -25,7 +25,10 @@ def doctor(root: Path) -> tuple[bool, str]:
     for key in ["graph_db", "qdrant_path", "reports_dir", "logs_dir", "knowledge_dir", "rationale_dir"]:
         path = config_path(root, key)
         lines.append(f"- {key}: {path}")
-    lines.append(f"- vector backend: {vector_backend_status(cfg.get('vector', {}).get('backend', 'auto'))}")
+    lines.append(
+        "- vector backend: "
+        + vector_backend_status(cfg.get("vector", {}).get("backend", "auto"), cfg.get("vector", {}).get("url"))
+    )
     try:
         store = SQLiteGraphStore(root, config_path(root, "graph_db"))
         store.initialize()

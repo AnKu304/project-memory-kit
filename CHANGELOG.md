@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.22.0
+
+Added:
+
+- Multi-chat Write Concurrency: безопасная запись из нескольких чатов.
+- SQLite `busy_timeout` on every runtime connection.
+- Managed write lock with metadata, TTL, stale cleanup, and `pmem lock status/clear`.
+- Local write queue with `pmem queue list/drain/clear`.
+- Optional Qdrant server URL through `vector.url`.
+
+Updated:
+
+- Write commands are serialized; read commands stay parallel.
+- Busy write commands are queued instead of failing immediately.
+- Auto-index locks now store metadata and clean stale locks.
+- Config schema includes `concurrency.*`, `paths.runtime_dir`, and `vector.url`.
+
+Removed:
+
+- Nothing.
+
+Better than 0.21.0:
+
+- Two or three chats can use the same project memory without corrupting local state.
+- Existing projects upgrade in place: SQLite database, Qdrant state, knowledge, rationale, Human files, logs, and reports are preserved.
+- Teams can keep embedded local Qdrant or switch to a local Qdrant server for more robust multi-process vector access.
+
 ## 0.21.0
 
 Added:

@@ -206,6 +206,7 @@ def _vectors(root: Path) -> QdrantLocalStore:
         backend=vector_cfg.get("backend", "auto"),
         collection=vector_cfg.get("collection", "project_memory_chunks"),
         model_name=vector_cfg.get("embedding_model"),
+        url=vector_cfg.get("url"),
     )
 
 

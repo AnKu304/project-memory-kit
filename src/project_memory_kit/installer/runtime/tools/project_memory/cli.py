@@ -44,12 +44,14 @@ from tools.project_memory.services.memory_report import build_memory_report, for
 from tools.project_memory.services.mcp_config import build_mcp_config, format_mcp_config, write_mcp_config
 from tools.project_memory.mcp import serve_stdio
 from tools.project_memory.parser_sections import (
+    add_concurrency_parsers,
     add_human_parser,
     add_knowledge_parser,
     add_modules_parser,
     add_rationale_parser,
     add_tasks_parser,
 )
+from tools.project_memory.services.concurrency import command_lock, command_queue, run_with_write_lock
 from tools.project_memory.services.modules import format_module_states, set_module_enabled
 from tools.project_memory.services.rationale import (
     add_rationale,
@@ -548,6 +550,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=command_migrate)
 
     add_modules_parser(sub, command_modules)
+    add_concurrency_parsers(sub, command_lock, command_queue)
 
     p = sub.add_parser("mcp")
     p.add_argument("--root", default=".")
@@ -578,9 +581,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     args = parser.parse_args(argv)
-    return int(args.func(args))
+    return run_with_write_lock(root(), args, argv, lambda: int(args.func(args)))
 
 
 if __name__ == "__main__":

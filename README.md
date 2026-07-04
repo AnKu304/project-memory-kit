@@ -108,6 +108,24 @@ mkdir -p .project-memory/logs
 ./pmem record-failure --command "<failed command>" --log-file "<log path>"
 ```
 
+## Мультичатовая работа
+
+Несколько чатов могут читать память параллельно. Команды записи проходят через короткую локальную блокировку, чтобы не повредить состояние SQLite/Qdrant:
+
+- чтение: `status`, `search`, `context`, `impact`, `tests`, `knowledge context`, `rationale context`;
+- запись: `index`, `knowledge add/update/retire`, `rationale add/update/retire`, `record-failure`, `human export/sync/graph`, `tasks close/import`, `modules set`.
+
+Если память занята другим чатом, команда записи ждет `concurrency.write_lock.timeout_seconds`. Если блокировка не освободилась, команда попадает в локальную очередь:
+
+```bash
+./pmem lock status
+./pmem lock clear
+./pmem queue list
+./pmem queue drain
+```
+
+`lock clear` удаляет только устаревшие блокировки. `lock clear --force` нужен только если вы уверены, что процесс записи уже остановлен.
+
 ## Основные команды
 
 Installer:
@@ -139,6 +157,9 @@ pmem version
 ./pmem audit --secrets
 ./pmem optimize
 ./pmem watch --serve --interval 5
+./pmem lock status
+./pmem queue list
+./pmem queue drain
 ```
 
 Задачи:
@@ -216,6 +237,16 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ./pmem doctor
 ```
 
+Для нескольких чатов можно указать локальный Qdrant-сервер в `.project-memory/config.yaml`:
+
+```yaml
+vector:
+  backend: qdrant
+  url: http://127.0.0.1:6333
+```
+
+Если `url` не задан, остается прежний встроенный локальный Qdrant или fallback-режим.
+
 Context Compiler
 
 Компилятор контекста
@@ -236,6 +267,7 @@ MCP умеет создавать, назначать и закрывать за
 
 Кратко:
 
+- `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.
 - `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.
 - `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions переведен на Node 24-capable actions и Node 22/24 matrix.
 - `0.19.0`: MCP Task Write Tools; MCP может создавать, назначать и закрывать `.agents/tasks/`.

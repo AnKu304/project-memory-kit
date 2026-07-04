@@ -364,6 +364,7 @@ def _vector_search(
         backend=backend,
         collection=vector_cfg.get("collection", "project_memory_chunks"),
         model_name=vector_cfg.get("embedding_model"),
+        url=vector_cfg.get("url"),
     )
     hits = vectors.search(query, limit)
     rows_by_id = _rows_by_chunk_id(store, [str(hit["chunk_id"]) for hit in hits], layer=layer)

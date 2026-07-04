@@ -1880,6 +1880,157 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("CALLS", kinds)
             self.assertTrue(all(row[3] > 0.7 for row in rows))
 
+    def test_write_lock_queues_busy_memory_writes_and_drains_later(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config = config_path.read_text(encoding="utf-8")
+            config = config.replace("timeout_seconds: 30", "timeout_seconds: 0")
+            config = config.replace("backend: auto", "backend: fallback")
+            config_path.write_text(config, encoding="utf-8")
+
+            note = root / "note.md"
+            note.write_text("# Concurrent note\n\nQueued while another writer is active.\n", encoding="utf-8")
+            runtime_dir = root / ".project-memory/runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            lock_file = runtime_dir / "write.lock"
+            lock_file.write_text(
+                json.dumps(
+                    {
+                        "kind": "write",
+                        "operation": "test active writer",
+                        "pid": __import__("os").getpid(),
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "started_at_epoch": __import__("time").time(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            queued = subprocess.run(
+                [
+                    str(root / "pmem"),
+                    "knowledge",
+                    "add",
+                    "--type",
+                    "architecture",
+                    "--title",
+                    "Concurrent note",
+                    "--file",
+                    "note.md",
+                ],
+                cwd=root,
+                env={**__import__("os").environ, "PMEM_WRITE_LOCK_TIMEOUT_SECONDS": "0"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(queued.returncode, 0, queued.stderr)
+            self.assertIn("queued write", queued.stdout)
+
+            queue_list = subprocess.run(
+                [str(root / "pmem"), "queue", "list"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(queue_list.returncode, 0, queue_list.stderr)
+            self.assertIn("knowledge add", queue_list.stdout)
+
+            lock_file.unlink()
+            drain = subprocess.run(
+                [str(root / "pmem"), "queue", "drain"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(drain.returncode, 0, drain.stderr)
+            self.assertIn("drained queue items: 1", drain.stdout)
+
+            show = subprocess.run(
+                [str(root / "pmem"), "knowledge", "show", "--id", "concurrent-note"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(show.returncode, 0, show.stderr)
+            self.assertIn("Queued while another writer is active.", show.stdout)
+
+    def test_lock_status_clears_stale_locks_and_sqlite_timeout_is_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            runtime_dir = root / ".project-memory/runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            lock_file = runtime_dir / "write.lock"
+            lock_file.write_text(
+                json.dumps(
+                    {
+                        "kind": "write",
+                        "operation": "dead writer",
+                        "pid": 99999999,
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "started_at_epoch": 1,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            status = subprocess.run(
+                [str(root / "pmem"), "lock", "status"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertIn("stale", status.stdout)
+
+            clear = subprocess.run(
+                [str(root / "pmem"), "lock", "clear"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(clear.returncode, 0, clear.stderr)
+            self.assertFalse(lock_file.exists())
+
+            check = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; "
+                    "from tools.project_memory.config import config_path; "
+                    "from tools.project_memory.graph.sqlite_store import SQLiteGraphStore; "
+                    "s=SQLiteGraphStore(Path('.').resolve(), config_path(Path('.').resolve(), 'graph_db')); "
+                    "s.initialize(); "
+                    "c=s.connect(); "
+                    "print(c.execute('PRAGMA busy_timeout').fetchone()[0]); "
+                    "print(c.execute('PRAGMA journal_mode').fetchone()[0])",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(check.returncode, 0, check.stderr)
+            self.assertIn("15000", check.stdout)
+            self.assertIn("wal", check.stdout.lower())
+
+    def test_config_supports_qdrant_server_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config = (root / ".project-memory/config.yaml").read_text(encoding="utf-8")
+            self.assertIn("url: null", config)
+            self.assertIn("runtime_dir: .project-memory/runtime", config)
+            self.assertIn("write_lock:", config)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "reports_dir": ".project-memory/reports",
         "logs_dir": ".project-memory/logs",
         "cache_dir": ".project-memory/cache",
+        "runtime_dir": ".project-memory/runtime",
         "knowledge_dir": ".project-memory/knowledge",
         "rationale_dir": ".project-memory/rationale",
         "evals_dir": ".project-memory/evals",
@@ -86,6 +87,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "memory": {"max_context_chunks": 8, "vector_size": 64},
+    "concurrency": {
+        "sqlite": {"busy_timeout_ms": 15000},
+        "write_lock": {"enabled": True, "timeout_seconds": 30, "stale_seconds": 900},
+        "queue": {"enabled": True, "dir": ".project-memory/runtime/write-queue"},
+    },
     "knowledge": {"max_context_items": 5},
     "rationale": {"max_context_items": 5},
     "audit": {
@@ -111,6 +117,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "backend": "auto",
         "collection": "project_memory_chunks",
         "embedding_model": None,
+        "url": None,
     },
 }
 

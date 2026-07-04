@@ -108,6 +108,24 @@ mkdir -p .project-memory/logs
 ./pmem record-failure --command "<failed command>" --log-file "<log path>"
 ```
 
+## Multi-chat Work
+
+Several chats can read memory in parallel. Write commands are serialized through a short local lock so SQLite/Qdrant state is not corrupted:
+
+- reads: `status`, `search`, `context`, `impact`, `tests`, `knowledge context`, `rationale context`;
+- writes: `index`, `knowledge add/update/retire`, `rationale add/update/retire`, `record-failure`, `human export/sync/graph`, `tasks close/import`, `modules set`.
+
+If another chat is writing, the command waits for `concurrency.write_lock.timeout_seconds`. If the lock is still busy, the command is stored in the local queue:
+
+```bash
+./pmem lock status
+./pmem lock clear
+./pmem queue list
+./pmem queue drain
+```
+
+`lock clear` removes stale locks only. Use `lock clear --force` only when you are sure the writer process has stopped.
+
 ## Core Commands
 
 Installer:
@@ -139,6 +157,9 @@ Installed runtime:
 ./pmem audit --secrets
 ./pmem optimize
 ./pmem watch --serve --interval 5
+./pmem lock status
+./pmem queue list
+./pmem queue drain
 ```
 
 Tasks:
@@ -206,6 +227,16 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ./pmem doctor
 ```
 
+For multiple chats, you can point the project at a local Qdrant server in `.project-memory/config.yaml`:
+
+```yaml
+vector:
+  backend: qdrant
+  url: http://127.0.0.1:6333
+```
+
+When `url` is not set, the previous embedded local Qdrant/fallback behavior is preserved.
+
 Context Compiler
 
 `./pmem context --compiled` builds a task packet with local evidence, preflight/postflight gates, impact, ranked search, knowledge/rationale, lifecycle, and provenance. Use it for complex tasks where context should stay bounded and evidence-backed.
@@ -220,6 +251,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.
 - `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.
 - `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions moved to Node 24-capable actions and a Node 22/24 matrix.
 - `0.19.0`: MCP Task Write Tools; MCP can create, assign, and close `.agents/tasks/`.

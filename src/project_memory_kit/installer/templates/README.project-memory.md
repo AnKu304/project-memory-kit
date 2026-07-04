@@ -39,10 +39,20 @@ Useful checks:
 ./pmem tasks linear status
 ./pmem human status
 ./pmem tests --base HEAD --explain
+./pmem lock status
+./pmem queue list
 ./pmem watch
 ./pmem watch --once
 ./pmem watch --serve --interval 5
 ```
+
+Multiple chats may read memory at the same time. Write commands use a short local lock. If a write command reports `queued write`, run:
+
+```bash
+./pmem queue drain
+```
+
+Use `./pmem lock clear` only for stale locks.
 
 Optional modules are controlled in `config.yaml`:
 
@@ -67,6 +77,14 @@ When enabled, Human export creates an Obsidian-like Markdown view over current k
 
 Generated files include `human/index.md`, `human/knowledge/**/*.md`, `human/rationale/**/*.md`, `human/graph.mmd`, `human/graph.json`, and optional `human/graph.html`.
 `human sync` can pull manual edits from generated Human notes back into source memory records, and it reports conflicts when both sides changed.
+
+For multi-chat vector writes, optional Qdrant server mode can be configured:
+
+```yaml
+vector:
+  backend: qdrant
+  url: http://127.0.0.1:6333
+```
 
 Linear bridge is available without extra runtime dependencies:
 

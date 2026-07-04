@@ -146,6 +146,16 @@ For memory quality checks, run:
 
 Use project-local tooling and sandboxes for verification whenever possible. Inspect command output locally and summarize the relevant result; do not send long raw outputs unless they are necessary to diagnose an ambiguous failure.
 
+Multiple chats may read project memory at the same time. Write commands are serialized by a local write lock. If a write command reports `queued write`, do not assume the memory update has been applied; tell the user and run or ask for:
+
+```bash
+./pmem lock status
+./pmem queue list
+./pmem queue drain
+```
+
+Use `./pmem lock clear` only for stale locks. Use `./pmem lock clear --force` only when the writer process is known to be stopped.
+
 When a durable research finding, architecture note, SEO rule, design principle, UX rule, product mechanic, or content rule changes, update project knowledge:
 
 ```bash

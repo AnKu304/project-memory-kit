@@ -508,6 +508,7 @@ def index_project(root: Path, mode: str = "changed") -> str:
         backend=vector_cfg.get("backend", "auto"),
         collection=vector_cfg.get("collection", "project_memory_chunks"),
         model_name=vector_cfg.get("embedding_model"),
+        url=vector_cfg.get("url"),
     )
 
     files = [path for path in _iter_files(root, mode, store) if should_index(root, path)]

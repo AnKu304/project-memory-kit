@@ -44,7 +44,10 @@ def project_status(root: Path) -> dict[str, Any]:
         "counts": counts,
         "vector": {
             "backend": cfg.get("vector", {}).get("backend", "auto"),
-            "status": vector_backend_status(cfg.get("vector", {}).get("backend", "auto")),
+            "status": vector_backend_status(
+                cfg.get("vector", {}).get("backend", "auto"),
+                cfg.get("vector", {}).get("url"),
+            ),
         },
         "search": cfg.get("search", {}),
         "parsers": cfg.get("parsers", {}),

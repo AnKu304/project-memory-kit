@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
 from tools.project_memory.ignore import should_index
+from tools.project_memory.services.concurrency import _lock_stale, _metadata
 
 
 @dataclass(frozen=True)
@@ -87,22 +89,32 @@ def index_lock_path(root: Path) -> Path:
 
 
 def index_locked(root: Path) -> bool:
-    return index_lock_path(root).exists()
+    path = index_lock_path(root)
+    stale_seconds = float(load_config(root).get("concurrency", {}).get("write_lock", {}).get("stale_seconds", 900))
+    if _lock_stale(path, stale_seconds):
+        path.unlink(missing_ok=True)
+        return False
+    return path.exists()
 
 
 class IndexLock:
     def __init__(self, root: Path):
+        self.root = root
         self.path = index_lock_path(root)
         self.acquired = False
 
     def __enter__(self) -> "IndexLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        stale_seconds = float(load_config(self.root).get("concurrency", {}).get("write_lock", {}).get("stale_seconds", 900))
+        if _lock_stale(self.path, stale_seconds):
+            self.path.unlink(missing_ok=True)
         try:
             fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             return self
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(str(os.getpid()))
+            json.dump(_metadata("auto-index", kind="index"), handle, indent=2, sort_keys=True)
+            handle.write("\n")
         self.acquired = True
         return self
 

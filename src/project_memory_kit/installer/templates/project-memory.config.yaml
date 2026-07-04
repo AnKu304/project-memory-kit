@@ -1,4 +1,4 @@
-version: 4
+version: 5
 project:
   name: auto
 paths:
@@ -7,6 +7,7 @@ paths:
   reports_dir: .project-memory/reports
   logs_dir: .project-memory/logs
   cache_dir: .project-memory/cache
+  runtime_dir: .project-memory/runtime
   knowledge_dir: .project-memory/knowledge
   rationale_dir: .project-memory/rationale
   evals_dir: .project-memory/evals
@@ -83,6 +84,16 @@ parsers:
 memory:
   max_context_chunks: 8
   vector_size: 64
+concurrency:
+  sqlite:
+    busy_timeout_ms: 15000
+  write_lock:
+    enabled: true
+    timeout_seconds: 30
+    stale_seconds: 900
+  queue:
+    enabled: true
+    dir: .project-memory/runtime/write-queue
 knowledge:
   max_context_items: 5
 rationale:
@@ -104,3 +115,4 @@ vector:
   backend: auto
   collection: project_memory_chunks
   embedding_model: null
+  url: null

@@ -12,7 +12,7 @@ def _normalize_backend(backend: str | None) -> str:
     return value if value in {"auto", "qdrant", "fallback"} else "auto"
 
 
-def vector_backend_status(backend: str | None = "auto") -> str:
+def vector_backend_status(backend: str | None = "auto", url: str | None = None) -> str:
     backend = _normalize_backend(backend)
     if backend == "fallback":
         return "deterministic fallback (configured)"
@@ -29,7 +29,7 @@ def vector_backend_status(backend: str | None = "auto") -> str:
         if backend == "qdrant":
             return "qdrant requested but unavailable (missing " + ", ".join(missing) + ")"
         return "deterministic fallback (missing " + ", ".join(missing) + ")"
-    return "qdrant local + fastembed available"
+    return "qdrant server + fastembed available" if url else "qdrant local + fastembed available"
 
 
 class QdrantLocalStore:
@@ -40,6 +40,7 @@ class QdrantLocalStore:
         backend: str = "auto",
         collection: str = "project_memory_chunks",
         model_name: str | None = None,
+        url: str | None = None,
     ):
         backend = _normalize_backend(backend)
         self.path = path
@@ -55,7 +56,7 @@ class QdrantLocalStore:
             try:
                 from qdrant_client import QdrantClient
 
-                self.client = QdrantClient(path=str(self.path))
+                self.client = QdrantClient(url=url) if url else QdrantClient(path=str(self.path))
                 self.embeddings = FastEmbedEmbeddings(model_name=model_name)
                 self.backend = "qdrant"
             except Exception as exc:

@@ -132,6 +132,31 @@ def add_modules_parser(sub: argparse._SubParsersAction, handler: CommandHandler)
     m.set_defaults(func=handler)
 
 
+def add_concurrency_parsers(
+    sub: argparse._SubParsersAction,
+    lock_handler: CommandHandler,
+    queue_handler: CommandHandler,
+) -> None:
+    p = sub.add_parser("lock")
+    lock_sub = p.add_subparsers(dest="lock_command", required=True)
+    item = lock_sub.add_parser("status")
+    item.set_defaults(func=lock_handler)
+    item = lock_sub.add_parser("clear")
+    item.add_argument("--force", action="store_true")
+    item.set_defaults(func=lock_handler)
+
+    p = sub.add_parser("queue")
+    queue_sub = p.add_subparsers(dest="queue_command", required=True)
+    item = queue_sub.add_parser("list")
+    item.set_defaults(func=queue_handler)
+    item = queue_sub.add_parser("clear")
+    item.add_argument("--id")
+    item.set_defaults(func=queue_handler)
+    item = queue_sub.add_parser("drain")
+    item.add_argument("--limit", type=int)
+    item.set_defaults(func=queue_handler)
+
+
 def add_tasks_parser(sub: argparse._SubParsersAction, handler: CommandHandler) -> None:
     p = sub.add_parser("tasks")
     tasks_sub = p.add_subparsers(dest="tasks_command", required=True)

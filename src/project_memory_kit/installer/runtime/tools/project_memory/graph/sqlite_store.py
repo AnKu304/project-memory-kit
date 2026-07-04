@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from tools.project_memory.config import load_config
 from tools.project_memory.hashing import stable_id
 from tools.project_memory.time_utils import utc_now
 
@@ -29,9 +30,14 @@ class SQLiteGraphStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        cfg = load_config(self.root)
+        timeout_ms = int(cfg.get("concurrency", {}).get("sqlite", {}).get("busy_timeout_ms", 15000))
+        conn = sqlite3.connect(self.db_path, timeout=max(timeout_ms / 1000, 0.1))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute(f"PRAGMA busy_timeout = {timeout_ms}")
         return conn
 
     def initialize(self) -> None:
