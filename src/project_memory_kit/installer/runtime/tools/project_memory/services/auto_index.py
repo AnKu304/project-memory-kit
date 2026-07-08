@@ -8,7 +8,7 @@ from pathlib import Path
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
-from tools.project_memory.ignore import should_index
+from tools.project_memory.ignore import iter_indexable_files
 from tools.project_memory.services.concurrency import MemoryBusyError, MemoryWriteLock, _lock_stale, _metadata
 
 
@@ -29,10 +29,6 @@ class IndexFreshness:
             and self.stale_files == 0
             and self.removed_files == 0
         )
-
-
-def iter_indexable_files(root: Path) -> list[Path]:
-    return [path for path in root.rglob("*") if should_index(root, path)]
 
 
 def index_freshness(root: Path, sample_limit: int = 8) -> IndexFreshness:

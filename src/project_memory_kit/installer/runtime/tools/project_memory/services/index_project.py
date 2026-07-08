@@ -7,7 +7,7 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.git_diff import changed_files, untracked_files
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
-from tools.project_memory.ignore import should_index
+from tools.project_memory.ignore import iter_indexable_files
 from tools.project_memory.parsers.js_ts import JsTsParser
 from tools.project_memory.parsers.js_ts_imports import JS_TS_EXTENSIONS, language_for_path as js_ts_language_for_path
 from tools.project_memory.parsers.python_ast import PythonAstParser
@@ -26,7 +26,7 @@ JS_TS_PARSER = JsTsParser()
 
 
 def _iter_files(root: Path, mode: str, store: SQLiteGraphStore | None = None) -> list[Path]:
-    all_files = [path for path in root.rglob("*") if should_index(root, path)]
+    all_files = iter_indexable_files(root)
     if mode == "changed":
         changed = list(dict.fromkeys([*changed_files(root), *untracked_files(root)]))
         if changed:
@@ -45,7 +45,7 @@ def _iter_files(root: Path, mode: str, store: SQLiteGraphStore | None = None) ->
 
 
 def _cleanup_removed_files(root: Path, store: SQLiteGraphStore) -> int:
-    current_paths = {path.relative_to(root).as_posix() for path in root.rglob("*") if should_index(root, path)}
+    current_paths = {path.relative_to(root).as_posix() for path in iter_indexable_files(root)}
     removed_paths = store.indexed_file_paths() - current_paths
     for rel in sorted(removed_paths):
         store.clear_removed_file_memory(rel)
@@ -513,7 +513,7 @@ def index_project(root: Path, mode: str = "changed") -> str:
     )
 
     try:
-        files = [path for path in _iter_files(root, mode, store) if should_index(root, path)]
+        files = _iter_files(root, mode, store)
         indexed = 0
         skipped = 0
         warnings: list[str] = []

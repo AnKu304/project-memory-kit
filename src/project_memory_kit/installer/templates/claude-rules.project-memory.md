@@ -7,12 +7,13 @@ Use project memory before meaningful code, config, schema, dependency, API, test
 ```bash
 ./pmem doctor
 ./pmem status
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<current task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
 Read the generated report before editing. Identify target files, target symbols, direct dependencies, reverse dependencies, affected tests, previous failures, project principles, and low-confidence graph areas.
+
+Run `./pmem index --mode changed` before editing only when `./pmem status` reports stale or missing files in the task area, retrieved context looks incomplete, or the task changes shared architecture, routes, API contracts, schemas, dependencies, or tests. Always run it after meaningful edits before final verification.
 
 ## Research And Principles
 

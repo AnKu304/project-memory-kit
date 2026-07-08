@@ -18,12 +18,13 @@ Before any meaningful code, config, schema, dependency, API, test, build, routin
 ```bash
 ./pmem doctor
 ./pmem status
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<current task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
 
 Read `.project-memory/reports/CHANGE_CONTEXT.md` before editing. Identify target files, target symbols, direct dependencies, reverse dependencies, affected tests, related previous failures, architecture constraints, and low-confidence graph areas.
+
+Run `./pmem index --mode changed` before editing only when `./pmem status` reports stale or missing files in the task area, retrieved context looks incomplete, or the task changes shared architecture, routes, API contracts, schemas, dependencies, or tests. Always run it after meaningful edits before final verification.
 
 If `.agents/tasks/` exists, check active user tasks and handoffs before starting:
 
@@ -95,6 +96,8 @@ Use `./pmem lock clear` only for stale locks. Use `./pmem lock clear --force` on
 `./pmem watch --serve` is allowed as a background freshness helper, but it must not be treated as a reason to wait on memory. Auto-index may skip a pass when another writer is active; continue with the current index and run `./pmem index --mode changed` after the writer finishes.
 
 Embedded local Qdrant is guarded by `qdrant.lock`. If vector access is busy, prefer the SQLite/BM25 results already returned by `pmem search/context` instead of retrying in a loop. For heavy parallel chat work, configure a local Qdrant server through `vector.url`.
+
+Project-wide memory scans must use the pruned walker in `tools.project_memory.ignore`. Do not reintroduce root-wide `Path.rglob("*")` in status, index, context, tests, or audit paths.
 
 When a durable research finding, architecture note, SEO rule, design principle, UX rule, product mechanic, or content rule changes, update project knowledge:
 

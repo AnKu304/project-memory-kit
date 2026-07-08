@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.project_memory.config import load_config
-from tools.project_memory.ignore import is_binary
+from tools.project_memory.ignore import is_binary, iter_project_files
 
 
 DEPENDENCY_DIRS = {
@@ -124,7 +124,7 @@ def scan_secrets(root: Path, max_findings: int | None = None) -> list[SecretFind
     allowlist.extend(item for item in _config_allowlist(root) if item not in allowlist)
     findings: list[SecretFinding] = []
 
-    for path in sorted(root.rglob("*")):
+    for path in sorted(iter_project_files(root, ignore_file_patterns=False)):
         if len(findings) >= limit:
             break
         if not _should_scan(root, path):

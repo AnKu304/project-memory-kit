@@ -1,4 +1,4 @@
-version: 6
+version: 7
 project:
   name: auto
 paths:
@@ -47,6 +47,10 @@ indexing:
     - venv/
     - node_modules/
     - tools/project_memory/
+    - .playwright-cli/
+    - .playwright-mcp/
+    - .turbo/
+    - coverage/
     - dist/
     - build/
     - .next/

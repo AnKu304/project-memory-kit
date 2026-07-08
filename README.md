@@ -85,13 +85,14 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 ```bash
 ./pmem doctor
 ./pmem tasks check
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ./pmem context --task "<task>" --base HEAD --compiled --out .project-memory/reports/COMPILED_CONTEXT.md
 ```
 
 Контекст ограничивается короткими выдержками, id и путями к полной записи. Большие файлы, логи и отчеты проверяются локальными командами; в модель передается только нужный итог или короткий фрагмент.
+
+`./pmem index --mode changed` перед правкой запускается только когда `./pmem status` показывает stale/missing файлы в зоне задачи, контекст выглядит неполным или меняются общие маршруты, API-контракты, схемы, зависимости, тесты или архитектура.
 
 После правок:
 
@@ -128,6 +129,8 @@ mkdir -p .project-memory/logs
 
 `watch --serve` не держит глобальную блокировку между проверками. Если автоиндексация видит активную запись из другого чата, она быстро пропускает текущий проход и использует уже существующий индекс.
 
+Индексация и audit обходят проект pruned walker-ом: ignored-директории вроде `node_modules/`, `.project-memory/`, `.playwright-cli/`, `.playwright-mcp/`, `.turbo/` и `coverage/` отсекаются до входа внутрь.
+
 ## Основные команды
 
 Installer:
@@ -148,7 +151,6 @@ pmem version
 ./pmem doctor
 ./pmem status
 ./pmem report
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "описание задачи"
 ./pmem context --task "описание задачи" --compiled
@@ -269,6 +271,7 @@ MCP умеет создавать, назначать и закрывать за
 
 Кратко:
 
+- `0.22.2`: Pruned Traversal Fix; status/index/context/audit skip ignored heavy directories before descent.
 - `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.
 - `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.
 - `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.

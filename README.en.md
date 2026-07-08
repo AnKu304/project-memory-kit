@@ -85,13 +85,14 @@ Before editing:
 ```bash
 ./pmem doctor
 ./pmem tasks check
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ./pmem context --task "<task>" --base HEAD --compiled --out .project-memory/reports/COMPILED_CONTEXT.md
 ```
 
 Context stays bounded: short snippets, ids, and paths to full records. Large files, logs, and reports are inspected with local commands first; only the relevant result or short excerpt goes into the model context.
+
+Run `./pmem index --mode changed` before editing only when `./pmem status` shows stale/missing files in the task area, context looks incomplete, or the task changes shared routes, API contracts, schemas, dependencies, tests, or architecture.
 
 After editing:
 
@@ -128,6 +129,8 @@ If another chat is writing, the command waits for `concurrency.write_lock.timeou
 
 `watch --serve` does not hold the global write lock between checks. If auto-index sees an active writer from another chat, it skips the current pass quickly and uses the existing index.
 
+Indexing and audit use a pruned project walker: ignored directories such as `node_modules/`, `.project-memory/`, `.playwright-cli/`, `.playwright-mcp/`, `.turbo/`, and `coverage/` are skipped before descent.
+
 ## Core Commands
 
 Installer:
@@ -148,7 +151,6 @@ Installed runtime:
 ./pmem doctor
 ./pmem status
 ./pmem report
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem context --task "task description"
 ./pmem context --task "task description" --compiled
@@ -253,6 +255,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.22.2`: Pruned Traversal Fix; status/index/context/audit skip ignored heavy directories before descent.
 - `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.
 - `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.
 - `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.

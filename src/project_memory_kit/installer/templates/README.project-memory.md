@@ -58,6 +58,8 @@ Use `./pmem lock clear` only for stale locks.
 
 Embedded local Qdrant uses `.project-memory/runtime/qdrant.lock`. In `backend: auto`, busy vector access falls back to SQLite/BM25 instead of blocking for a long time.
 
+Project-wide memory scans use a pruned walker. Ignored generated directories such as `node_modules/`, `.project-memory/`, `.playwright-cli/`, `.playwright-mcp/`, `.turbo/`, and `coverage/` are skipped before descent.
+
 Optional modules are controlled in `config.yaml`:
 
 ```yaml

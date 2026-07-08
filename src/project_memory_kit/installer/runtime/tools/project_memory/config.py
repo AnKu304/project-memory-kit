@@ -54,6 +54,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "venv/",
             "node_modules/",
             "tools/project_memory/",
+            ".playwright-cli/",
+            ".playwright-mcp/",
+            ".turbo/",
+            "coverage/",
             "dist/",
             "build/",
             ".next/",
@@ -122,6 +126,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
 }
 
+SAFE_GENERATED_IGNORE_PATTERNS = [
+    ".playwright-cli/",
+    ".playwright-mcp/",
+    ".turbo/",
+    "coverage/",
+]
+
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     result = dict(base)
@@ -156,6 +167,12 @@ def normalize_config(config: dict[str, Any], source_version: int) -> dict[str, A
     qdrant_lock.setdefault("enabled", True)
     qdrant_lock.setdefault("timeout_seconds", 2)
     qdrant_lock.setdefault("stale_seconds", 300)
+    if source_version < 7:
+        indexing = config.setdefault("indexing", {})
+        ignored = indexing.setdefault("ignore", [])
+        for pattern in SAFE_GENERATED_IGNORE_PATTERNS:
+            if pattern not in ignored:
+                ignored.append(pattern)
     return config
 
 

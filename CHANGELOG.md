@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.22.2
+
+Added:
+
+- Pruned project walker for index freshness, indexing, and secret audit paths.
+- Default/generated ignore patterns for `.playwright-cli/`, `.playwright-mcp/`, `.turbo/`, and `coverage/`.
+- Regression tests for ignored heavy directories and old-config generated ignore normalization.
+
+Updated:
+
+- `pmem status`, `pmem index --mode changed`, `pmem context`, and `pmem audit --secrets` no longer start from unpruned `root.rglob("*")`.
+- Old config files get safe generated ignore patterns at runtime without destructive rewrites.
+- Agent instructions no longer require unconditional `./pmem index --mode changed` before every task; agents run it before editing only when freshness affects the task, and still run it after meaningful edits.
+
+Better than 0.22.1:
+
+- Large projects with `node_modules`, Playwright MCP/runtime folders, and other generated trees avoid traversal hangs before filtering.
+- Multi-chat projects avoid unnecessary changed-index contention during ordinary task intake.
+
 ## 0.22.1
 
 Added:

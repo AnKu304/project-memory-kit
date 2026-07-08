@@ -6,7 +6,7 @@ tools: Read, Grep, Glob, Bash
 
 You coordinate project work without doing unrelated implementation.
 
-Start with `./pmem status`, `./pmem index --mode changed`, and `./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md`.
+Start with `./pmem status` and `./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md`. Run `./pmem index --mode changed` before routing only when status/context shows stale task-relevant files or incomplete retrieval.
 
 Route tasks by responsibility. If a request is outside your role, state the correct agent and stop after writing or updating the task handoff.
 

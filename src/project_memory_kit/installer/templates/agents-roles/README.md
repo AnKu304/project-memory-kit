@@ -9,8 +9,9 @@ Each agent should check active handoffs before starting:
 ```bash
 find .agents/tasks -type f -name "*.md" 2>/dev/null | sort
 ./pmem status
-./pmem index --mode changed
 ```
+
+Run `./pmem index --mode changed` at intake only when status/context shows stale task-relevant files or incomplete retrieval. It remains required after meaningful edits.
 
 If the task belongs to another role, say which role should handle it and stop after creating or updating the handoff note.
 

@@ -2183,7 +2183,7 @@ class RuntimeCommandsTest(unittest.TestCase):
             install_project(root)
             config_path = root / ".project-memory/config.yaml"
             config = config_path.read_text(encoding="utf-8")
-            config = config.replace("version: 6", "version: 5")
+            config = config.replace("version: 7", "version: 5")
             config = config.replace("busy_timeout_ms: 3000", "busy_timeout_ms: 15000")
             config = config.replace("timeout_seconds: 5", "timeout_seconds: 30", 1)
             config = config.replace("stale_seconds: 300", "stale_seconds: 900", 1)
@@ -2199,11 +2199,13 @@ class RuntimeCommandsTest(unittest.TestCase):
                     "-c",
                     "from pathlib import Path; "
                     "from tools.project_memory.config import load_config; "
-                    "c=load_config(Path('.').resolve())['concurrency']; "
+                    "cfg=load_config(Path('.').resolve()); "
+                    "c=cfg['concurrency']; "
                     "print(c['sqlite']['busy_timeout_ms']); "
                     "print(c['write_lock']['timeout_seconds']); "
                     "print(c['write_lock']['stale_seconds']); "
-                    "print(c['qdrant_lock']['timeout_seconds'])",
+                    "print(c['qdrant_lock']['timeout_seconds']); "
+                    "print('.playwright-cli/' in cfg['indexing'].get('ignore', []))",
                 ],
                 cwd=root,
                 text=True,
@@ -2211,7 +2213,42 @@ class RuntimeCommandsTest(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
             self.assertEqual(check.returncode, 0, check.stderr)
-            self.assertEqual(check.stdout.splitlines(), ["3000", "5", "300", "2"])
+            self.assertEqual(check.stdout.splitlines(), ["3000", "5", "300", "2", "True"])
+
+    def test_pruned_indexable_walker_skips_ignored_heavy_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            (root / "src").mkdir()
+            (root / "src/app.py").write_text("def marker():\n    return True\n", encoding="utf-8")
+            (root / "node_modules/pkg").mkdir(parents=True)
+            (root / "node_modules/pkg/ignored.ts").write_text("export const ignored = true\n", encoding="utf-8")
+            (root / ".playwright-cli").mkdir()
+            (root / ".playwright-cli/ignored.json").write_text('{"ignored": true}\n', encoding="utf-8")
+            (root / "ignored-generated").mkdir()
+            (root / "ignored-generated/file.py").write_text("def ignored():\n    return True\n", encoding="utf-8")
+            (root / ".project-memoryignore").write_text("ignored-generated/\n", encoding="utf-8")
+
+            check = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; "
+                    "from tools.project_memory.ignore import iter_indexable_files; "
+                    "root=Path('.').resolve(); "
+                    "print('\\n'.join(sorted(p.relative_to(root).as_posix() for p in iter_indexable_files(root))))",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(check.returncode, 0, check.stderr)
+            listed = check.stdout.splitlines()
+            self.assertIn("src/app.py", listed)
+            self.assertNotIn("node_modules/pkg/ignored.ts", listed)
+            self.assertNotIn(".playwright-cli/ignored.json", listed)
+            self.assertNotIn("ignored-generated/file.py", listed)
 
 
 if __name__ == "__main__":

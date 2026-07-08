@@ -6,9 +6,10 @@ Start with:
 
 ```bash
 ./pmem status
-./pmem index --mode changed
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
 ```
+
+Run `./pmem index --mode changed` before routing only when status/context shows stale task-relevant files or incomplete retrieval.
 
 Write agent-to-agent handoffs in English. Add a short Russian subtitle only in the title when helpful.
 
