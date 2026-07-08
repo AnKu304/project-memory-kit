@@ -156,6 +156,10 @@ Multiple chats may read project memory at the same time. Write commands are seri
 
 Use `./pmem lock clear` only for stale locks. Use `./pmem lock clear --force` only when the writer process is known to be stopped.
 
+`./pmem watch --serve` is allowed as a background freshness helper, but it must not be treated as a reason to wait on memory. Auto-index may skip a pass when another writer is active; continue with the current index and run `./pmem index --mode changed` after the writer finishes.
+
+Embedded local Qdrant is guarded by `qdrant.lock`. If vector access is busy, prefer the SQLite/BM25 results already returned by `pmem search/context` instead of retrying in a loop. For heavy parallel chat work, configure a local Qdrant server through `vector.url`.
+
 When a durable research finding, architecture note, SEO rule, design principle, UX rule, product mechanic, or content rule changes, update project knowledge:
 
 ```bash

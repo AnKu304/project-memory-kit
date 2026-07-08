@@ -126,6 +126,8 @@ If another chat is writing, the command waits for `concurrency.write_lock.timeou
 
 `lock clear` removes stale locks only. Use `lock clear --force` only when you are sure the writer process has stopped.
 
+`watch --serve` does not hold the global write lock between checks. If auto-index sees an active writer from another chat, it skips the current pass quickly and uses the existing index.
+
 ## Core Commands
 
 Installer:
@@ -235,7 +237,7 @@ vector:
   url: http://127.0.0.1:6333
 ```
 
-When `url` is not set, the previous embedded local Qdrant/fallback behavior is preserved.
+When `url` is not set, embedded local Qdrant or fallback mode is preserved. Embedded Qdrant is guarded by a short local lock: if another process is using it, `backend: auto` quickly uses the SQLite/BM25 path without a long wait.
 
 Context Compiler
 
@@ -251,6 +253,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.
 - `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.
 - `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.
 - `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions moved to Node 24-capable actions and a Node 22/24 matrix.

@@ -509,23 +509,27 @@ def index_project(root: Path, mode: str = "changed") -> str:
         collection=vector_cfg.get("collection", "project_memory_chunks"),
         model_name=vector_cfg.get("embedding_model"),
         url=vector_cfg.get("url"),
+        root=root,
     )
 
-    files = [path for path in _iter_files(root, mode, store) if should_index(root, path)]
-    indexed = 0
-    skipped = 0
-    warnings: list[str] = []
-    removed = _cleanup_removed_files(root, store)
+    try:
+        files = [path for path in _iter_files(root, mode, store) if should_index(root, path)]
+        indexed = 0
+        skipped = 0
+        warnings: list[str] = []
+        removed = _cleanup_removed_files(root, store)
 
-    project_id = store.upsert_node(kind="Project", name=root.name, fqn=root.name, path=".")
+        project_id = store.upsert_node(kind="Project", name=root.name, fqn=root.name, path=".")
 
-    for path in files:
-        did_index, did_skip, file_warnings = _index_file(root, path, mode, project_id, store, vectors)
-        if did_skip:
-            skipped += 1
-        if did_index:
-            indexed += 1
-        warnings.extend(file_warnings)
+        for path in files:
+            did_index, did_skip, file_warnings = _index_file(root, path, mode, project_id, store, vectors)
+            if did_skip:
+                skipped += 1
+            if did_index:
+                indexed += 1
+            warnings.extend(file_warnings)
+    finally:
+        vectors.close()
 
     summary = [f"indexed={indexed}", f"skipped={skipped}", f"removed={removed}", f"mode={mode}"]
     bound = _bind_cross_file_symbols(store)

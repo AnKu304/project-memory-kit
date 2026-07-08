@@ -4,6 +4,7 @@ import json
 import uuid
 from pathlib import Path
 
+from tools.project_memory.services.concurrency import MemoryBusyError, MemoryResourceLock
 from tools.project_memory.vector.embeddings import DeterministicEmbeddings, FastEmbedEmbeddings
 
 
@@ -29,7 +30,7 @@ def vector_backend_status(backend: str | None = "auto", url: str | None = None) 
         if backend == "qdrant":
             return "qdrant requested but unavailable (missing " + ", ".join(missing) + ")"
         return "deterministic fallback (missing " + ", ".join(missing) + ")"
-    return "qdrant server + fastembed available" if url else "qdrant local + fastembed available"
+    return "qdrant server + fastembed available" if url else "qdrant local + fastembed available (guarded)"
 
 
 class QdrantLocalStore:
@@ -41,6 +42,7 @@ class QdrantLocalStore:
         collection: str = "project_memory_chunks",
         model_name: str | None = None,
         url: str | None = None,
+        root: Path | None = None,
     ):
         backend = _normalize_backend(backend)
         self.path = path
@@ -51,21 +53,54 @@ class QdrantLocalStore:
         self.strict_qdrant = backend == "qdrant"
         self.backend = "fallback"
         self.client = None
+        self._lock: MemoryResourceLock | None = None
         self._collection_ready = False
         if backend != "fallback":
             try:
                 from qdrant_client import QdrantClient
 
+                if not url:
+                    lock_root = root or self.path.parent.parent
+                    self._lock = MemoryResourceLock(lock_root, "qdrant", "qdrant local access")
+                    self._lock.__enter__()
                 self.client = QdrantClient(url=url) if url else QdrantClient(path=str(self.path))
                 self.embeddings = FastEmbedEmbeddings(model_name=model_name)
                 self.backend = "qdrant"
+            except MemoryBusyError as exc:
+                self._release_lock()
+                if self.strict_qdrant:
+                    raise RuntimeError("qdrant local vector backend is busy") from exc
+                self.client = None
+                self.embeddings = DeterministicEmbeddings(vector_size)
             except Exception as exc:
+                self._release_lock()
                 if self.strict_qdrant:
                     raise RuntimeError("qdrant vector backend requested but unavailable") from exc
                 self.client = None
                 self.embeddings = DeterministicEmbeddings(vector_size)
         else:
             self.embeddings = DeterministicEmbeddings(vector_size)
+
+    def _release_lock(self) -> None:
+        if self._lock is not None:
+            self._lock.__exit__(None, None, None)
+            self._lock = None
+
+    def close(self) -> None:
+        client = self.client
+        self.client = None
+        if client is not None and hasattr(client, "close"):
+            try:
+                client.close()
+            except Exception:
+                pass
+        self._release_lock()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def upsert_chunk(self, chunk_id: str, text: str, payload: dict[str, object]) -> None:
         try:

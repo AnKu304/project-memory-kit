@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.22.1
+
+Added:
+
+- Guarded embedded Qdrant access with a short local resource lock.
+- Regression tests for watcher/write-lock contention, busy auto-index, and Qdrant busy fallback.
+
+Updated:
+
+- `watch --serve` no longer holds the global write lock while it sleeps.
+- Auto-index skips immediately when another writer is active instead of waiting behind `write.lock`.
+- Default contention timeouts are shorter: SQLite `busy_timeout_ms` is `3000`, write lock timeout is `5s`, embedded Qdrant lock timeout is `2s`.
+- Local embedded Qdrant in `vector.backend: auto` falls back to SQLite/BM25 path when another process is using it.
+
+Removed:
+
+- Long default waits that made agents appear stuck during multi-chat work.
+
+Better than 0.22.0:
+
+- A watcher in one chat no longer blocks memory writes from other chats.
+- Search/context commands stay responsive when memory is busy and avoid unnecessary agent fallback behavior.
+
 ## 0.22.0
 
 Added:

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -461,10 +463,8 @@ class RuntimeCommandsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             install_project(root, agent="multiagent")
-            (root / "token.txt").write_text(
-                'client_secret = "aZ9qLm82Pq7Vr4St1Nx6Yp3Kd8Qw5Er2"\n',
-                encoding="utf-8",
-            )
+            fake_secret = "aZ9qLm82" + "Pq7Vr4St" + "1Nx6Yp3K" + "d8Qw5Er2"
+            (root / "token.txt").write_text(f'client_secret = "{fake_secret}"\n', encoding="utf-8")
             audit = subprocess.run(
                 [str(root / "pmem"), "audit", "--secrets"],
                 cwd=root,
@@ -1960,6 +1960,150 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(show.returncode, 0, show.stderr)
             self.assertIn("Queued while another writer is active.", show.stdout)
 
+    def test_watch_serve_does_not_hold_write_lock_between_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config = config_path.read_text(encoding="utf-8")
+            config = config.replace("backend: auto", "backend: fallback")
+            config = config.replace("timeout_seconds: 5", "timeout_seconds: 0", 1)
+            config_path.write_text(config, encoding="utf-8")
+
+            note = root / "watch-note.md"
+            note.write_text("# Watch note\n\nThe watcher must not hold the write lock while sleeping.\n", encoding="utf-8")
+            watch = subprocess.Popen(
+                [str(root / "pmem"), "watch", "--serve", "--interval", "5", "--max-runs", "2"],
+                cwd=root,
+                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            try:
+                first = watch.stdout.readline() if watch.stdout else ""
+                second = watch.stdout.readline() if watch.stdout else ""
+                self.assertIn("watch serve", first)
+                self.assertIn("watch check 1", second)
+
+                add = subprocess.run(
+                    [
+                        str(root / "pmem"),
+                        "knowledge",
+                        "add",
+                        "--type",
+                        "architecture",
+                        "--title",
+                        "Watch note",
+                        "--file",
+                        "watch-note.md",
+                    ],
+                    cwd=root,
+                    env={**os.environ, "PMEM_WRITE_LOCK_TIMEOUT_SECONDS": "0"},
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                self.assertEqual(add.returncode, 0, add.stderr)
+                self.assertIn("knowledge added", add.stdout)
+                self.assertNotIn("queued write", add.stdout)
+            finally:
+                watch.terminate()
+                try:
+                    watch.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    watch.kill()
+                    watch.communicate()
+
+    def test_auto_index_skips_quickly_when_write_lock_is_busy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config = config_path.read_text(encoding="utf-8").replace("backend: auto", "backend: fallback")
+            config_path.write_text(config, encoding="utf-8")
+
+            (root / "busy_auto_index.py").write_text("def busy_auto_index_marker():\n    return True\n", encoding="utf-8")
+            runtime_dir = root / ".project-memory/runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            (runtime_dir / "write.lock").write_text(
+                json.dumps(
+                    {
+                        "kind": "write",
+                        "operation": "active writer",
+                        "pid": os.getpid(),
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "started_at_epoch": time.time(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            started = time.monotonic()
+            search = subprocess.run(
+                [str(root / "pmem"), "search", "--query", "busy_auto_index_marker", "--limit", "5"],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            elapsed = time.monotonic() - started
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertLess(elapsed, 5)
+
+            conn = sqlite3.connect(root / ".project-memory/graph.sqlite")
+            try:
+                indexed = conn.execute(
+                    "SELECT path FROM file_index_state WHERE path = 'busy_auto_index.py'"
+                ).fetchall()
+            finally:
+                conn.close()
+            self.assertFalse(indexed)
+
+    def test_qdrant_local_busy_falls_back_in_auto_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config = config_path.read_text(encoding="utf-8")
+            config = config.replace(
+                "qdrant_lock:\n    enabled: true\n    timeout_seconds: 2",
+                "qdrant_lock:\n    enabled: true\n    timeout_seconds: 0",
+            )
+            config_path.write_text(config, encoding="utf-8")
+            runtime_dir = root / ".project-memory/runtime"
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            (runtime_dir / "qdrant.lock").write_text(
+                json.dumps(
+                    {
+                        "kind": "qdrant",
+                        "operation": "active qdrant client",
+                        "pid": os.getpid(),
+                        "started_at": "2026-01-01T00:00:00Z",
+                        "started_at_epoch": time.time(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            check = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; "
+                    "from tools.project_memory.vector.qdrant_store import QdrantLocalStore; "
+                    "s=QdrantLocalStore(Path('.project-memory/qdrant'), backend='auto', root=Path('.').resolve()); "
+                    "print(s.backend); "
+                    "s.close()",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(check.returncode, 0, check.stderr)
+            self.assertIn("fallback", check.stdout)
+
     def test_lock_status_clears_stale_locks_and_sqlite_timeout_is_configured(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2019,7 +2163,7 @@ class RuntimeCommandsTest(unittest.TestCase):
                 stderr=subprocess.PIPE,
             )
             self.assertEqual(check.returncode, 0, check.stderr)
-            self.assertIn("15000", check.stdout)
+            self.assertIn("3000", check.stdout)
             self.assertIn("wal", check.stdout.lower())
 
     def test_config_supports_qdrant_server_url(self) -> None:
@@ -2030,6 +2174,44 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertIn("url: null", config)
             self.assertIn("runtime_dir: .project-memory/runtime", config)
             self.assertIn("write_lock:", config)
+            self.assertIn("qdrant_lock:", config)
+            self.assertIn("busy_timeout_ms: 3000", config)
+
+    def test_old_concurrency_defaults_are_normalized_at_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            install_project(root)
+            config_path = root / ".project-memory/config.yaml"
+            config = config_path.read_text(encoding="utf-8")
+            config = config.replace("version: 6", "version: 5")
+            config = config.replace("busy_timeout_ms: 3000", "busy_timeout_ms: 15000")
+            config = config.replace("timeout_seconds: 5", "timeout_seconds: 30", 1)
+            config = config.replace("stale_seconds: 300", "stale_seconds: 900", 1)
+            config = config.replace(
+                "  qdrant_lock:\n    enabled: true\n    timeout_seconds: 2\n    stale_seconds: 300\n",
+                "",
+            )
+            config_path.write_text(config, encoding="utf-8")
+
+            check = subprocess.run(
+                [
+                    "python3",
+                    "-c",
+                    "from pathlib import Path; "
+                    "from tools.project_memory.config import load_config; "
+                    "c=load_config(Path('.').resolve())['concurrency']; "
+                    "print(c['sqlite']['busy_timeout_ms']); "
+                    "print(c['write_lock']['timeout_seconds']); "
+                    "print(c['write_lock']['stale_seconds']); "
+                    "print(c['qdrant_lock']['timeout_seconds'])",
+                ],
+                cwd=root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            self.assertEqual(check.returncode, 0, check.stderr)
+            self.assertEqual(check.stdout.splitlines(), ["3000", "5", "300", "2"])
 
 
 if __name__ == "__main__":

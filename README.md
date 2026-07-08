@@ -126,6 +126,8 @@ mkdir -p .project-memory/logs
 
 `lock clear` удаляет только устаревшие блокировки. `lock clear --force` нужен только если вы уверены, что процесс записи уже остановлен.
 
+`watch --serve` не держит глобальную блокировку между проверками. Если автоиндексация видит активную запись из другого чата, она быстро пропускает текущий проход и использует уже существующий индекс.
+
 ## Основные команды
 
 Installer:
@@ -245,7 +247,7 @@ vector:
   url: http://127.0.0.1:6333
 ```
 
-Если `url` не задан, остается прежний встроенный локальный Qdrant или fallback-режим.
+Если `url` не задан, остается встроенный локальный Qdrant или fallback-режим. Встроенный Qdrant защищен короткой локальной блокировкой: если он занят другим процессом, `backend: auto` быстро использует SQLite/BM25 путь без долгого ожидания.
 
 Context Compiler
 
@@ -267,6 +269,7 @@ MCP умеет создавать, назначать и закрывать за
 
 Кратко:
 
+- `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.
 - `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.
 - `0.21.0`: Depth Improvements; compiled context, retrieval diversity, golden evals, test graph bindings, lifecycle, local evidence, task gates, provenance.
 - `0.20.0`: CI Runtime Warning Cleanup; GitHub Actions переведен на Node 24-capable actions и Node 22/24 matrix.

@@ -9,7 +9,7 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
 from tools.project_memory.ignore import should_index
-from tools.project_memory.services.concurrency import _lock_stale, _metadata
+from tools.project_memory.services.concurrency import MemoryBusyError, MemoryWriteLock, _lock_stale, _metadata
 
 
 @dataclass(frozen=True)
@@ -138,13 +138,17 @@ def ensure_fresh_index(root: Path, command: str) -> str | None:
     if mode not in {"changed", "full"}:
         mode = "changed"
 
-    with IndexLock(root) as lock:
-        if not lock.acquired:
-            return f"auto-index before {command}: skipped because index.lock exists"
+    try:
+        with MemoryWriteLock(root, f"auto-index before {command}", timeout_seconds=0):
+            with IndexLock(root) as lock:
+                if not lock.acquired:
+                    return f"auto-index before {command}: skipped because index.lock exists"
 
-        from tools.project_memory.services.index_project import index_project
+                from tools.project_memory.services.index_project import index_project
 
-        report = index_project(root, mode=mode)
+                report = index_project(root, mode=mode)
+    except MemoryBusyError:
+        return f"auto-index before {command}: skipped because write.lock exists"
     sample = ", ".join(freshness.sample)
     reason = (
         f"auto-index before {command}: missing={freshness.missing_files} "

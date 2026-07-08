@@ -41,6 +41,10 @@ def _queue_settings(root: Path) -> dict[str, Any]:
     return _settings(root).get("queue", {})
 
 
+def _resource_lock_settings(root: Path, name: str) -> dict[str, Any]:
+    return _settings(root).get(f"{name}_lock", {})
+
+
 def _runtime_dir(root: Path) -> Path:
     try:
         return config_path(root, "runtime_dir")
@@ -50,6 +54,10 @@ def _runtime_dir(root: Path) -> Path:
 
 def write_lock_path(root: Path) -> Path:
     return _runtime_dir(root) / "write.lock"
+
+
+def resource_lock_path(root: Path, name: str) -> Path:
+    return _runtime_dir(root) / f"{name}.lock"
 
 
 def queue_dir(root: Path) -> Path:
@@ -140,9 +148,53 @@ class MemoryWriteLock:
             self.path.unlink(missing_ok=True)
 
 
+class MemoryResourceLock:
+    def __init__(self, root: Path, name: str, operation: str, timeout_seconds: float | None = None):
+        self.root = root
+        self.name = name
+        self.operation = operation
+        settings = _resource_lock_settings(root, name)
+        self.enabled = bool(settings.get("enabled", True))
+        default_timeout = settings.get("timeout_seconds", 2)
+        self.timeout = float(timeout_seconds if timeout_seconds is not None else default_timeout)
+        self.stale_seconds = float(settings.get("stale_seconds", 300))
+        self.path = resource_lock_path(root, name)
+        self.acquired = False
+
+    def __enter__(self) -> "MemoryResourceLock":
+        if not self.enabled:
+            self.acquired = True
+            return self
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.time() + max(self.timeout, 0)
+        while True:
+            if _lock_stale(self.path, self.stale_seconds):
+                self.path.unlink(missing_ok=True)
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                if time.time() >= deadline:
+                    raise MemoryBusyError(f"project memory {self.name} lock is busy: {self.path}")
+                time.sleep(0.1)
+                continue
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(_metadata(self.operation, kind=self.name), handle, indent=2, sort_keys=True)
+                handle.write("\n")
+            self.acquired = True
+            return self
+
+    def __exit__(self, *_: object) -> None:
+        if self.acquired and self.enabled:
+            self.path.unlink(missing_ok=True)
+
+
 def lock_status(root: Path) -> list[LockReport]:
     stale_seconds = float(_write_lock_settings(root).get("stale_seconds", 900))
-    paths = [write_lock_path(root), config_path(root, "cache_dir") / "index.lock"]
+    paths = [
+        write_lock_path(root),
+        config_path(root, "cache_dir") / "index.lock",
+        resource_lock_path(root, "qdrant"),
+    ]
     reports: list[LockReport] = []
     for path in paths:
         reports.append(LockReport(path.exists(), str(path), _lock_stale(path, stale_seconds), _read_metadata(path)))
@@ -276,12 +328,18 @@ def command_queue(args: argparse.Namespace) -> int:
 
 def _write_operation(args: argparse.Namespace) -> str | None:
     command = getattr(args, "command", "")
-    if command in {"index", "record-failure", "migrate", "optimize", "watch"}:
+    if command in {"index", "record-failure", "migrate", "optimize"}:
         return command
+    if command == "mcp-config" and getattr(args, "write", False):
+        return "mcp-config write"
     if command == "modules" and getattr(args, "modules_command", "") == "set":
         return "modules set"
-    if command == "tasks" and getattr(args, "tasks_command", "") in {"close", "linear"}:
-        return f"tasks {getattr(args, 'tasks_command')}"
+    if command == "tasks" and getattr(args, "tasks_command", "") == "close":
+        return "tasks close"
+    if command == "tasks" and getattr(args, "tasks_command", "") == "linear":
+        linear_command = getattr(args, "linear_command", "")
+        if linear_command in {"export", "import"}:
+            return f"tasks linear {linear_command}"
     if command == "knowledge" and getattr(args, "knowledge_command", "") in {"add", "update", "retire"}:
         return f"knowledge {args.knowledge_command}"
     if command == "rationale" and getattr(args, "rationale_command", "") in {"add", "update", "retire"}:

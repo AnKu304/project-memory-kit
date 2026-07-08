@@ -231,6 +231,7 @@ def _vectors(root: Path) -> QdrantLocalStore:
         collection=vector_cfg.get("collection", "project_memory_chunks"),
         model_name=vector_cfg.get("embedding_model"),
         url=vector_cfg.get("url"),
+        root=root,
     )
 
 
@@ -275,48 +276,51 @@ def _index_entry(
         return
 
     vectors = _vectors(root)
-    for index, chunk in enumerate(_chunks(content), start=1):
-        chunk_id = store.upsert_node(
-            id=stable_id("rationale-chunk", entry_id, index),
-            kind="RationaleChunk",
-            name=f"{title} chunk {index}",
-            fqn=f"rationale:{entry_id}#chunk-{index}",
-            path=path,
-            language="markdown",
-            layer="rationale",
-            properties={
-                "content": chunk[:2000],
-                "rationale_id": entry_id,
-                "type": rationale_type,
-                "status": status,
-                "version": version,
-                "summary": summary,
-                "tags": tags,
-            },
-        )
-        store.upsert_edge(rationale_id, chunk_id, "CONTAINS", source="rationale", confidence=1.0)
-        with store.connect() as conn:
-            conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
-            conn.execute(
-                "INSERT INTO chunks_fts(chunk_id, path, fqn, content) VALUES (?, ?, ?, ?)",
-                (chunk_id, path, f"rationale:{entry_id}", f"{title}\n{summary}\n{chunk}"),
+    try:
+        for index, chunk in enumerate(_chunks(content), start=1):
+            chunk_id = store.upsert_node(
+                id=stable_id("rationale-chunk", entry_id, index),
+                kind="RationaleChunk",
+                name=f"{title} chunk {index}",
+                fqn=f"rationale:{entry_id}#chunk-{index}",
+                path=path,
+                language="markdown",
+                layer="rationale",
+                properties={
+                    "content": chunk[:2000],
+                    "rationale_id": entry_id,
+                    "type": rationale_type,
+                    "status": status,
+                    "version": version,
+                    "summary": summary,
+                    "tags": tags,
+                },
             )
-        vectors.upsert_chunk(
-            chunk_id,
-            f"{title}\n{summary}\n{chunk}",
-            {
-                "chunk_id": chunk_id,
-                "node_id": chunk_id,
-                "file_path": path,
-                "rationale_id": entry_id,
-                "rationale_type": rationale_type,
-                "title": title,
-                "status": status,
-                "version": version,
-                "kind": "rationale",
-                "hash": sha256_text(content),
-            },
-        )
+            store.upsert_edge(rationale_id, chunk_id, "CONTAINS", source="rationale", confidence=1.0)
+            with store.connect() as conn:
+                conn.execute("DELETE FROM chunks_fts WHERE chunk_id = ?", (chunk_id,))
+                conn.execute(
+                    "INSERT INTO chunks_fts(chunk_id, path, fqn, content) VALUES (?, ?, ?, ?)",
+                    (chunk_id, path, f"rationale:{entry_id}", f"{title}\n{summary}\n{chunk}"),
+                )
+            vectors.upsert_chunk(
+                chunk_id,
+                f"{title}\n{summary}\n{chunk}",
+                {
+                    "chunk_id": chunk_id,
+                    "node_id": chunk_id,
+                    "file_path": path,
+                    "rationale_id": entry_id,
+                    "rationale_type": rationale_type,
+                    "title": title,
+                    "status": status,
+                    "version": version,
+                    "kind": "rationale",
+                    "hash": sha256_text(content),
+                },
+            )
+    finally:
+        vectors.close()
 
 
 def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str]) -> None:

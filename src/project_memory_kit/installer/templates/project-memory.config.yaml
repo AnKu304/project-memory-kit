@@ -1,4 +1,4 @@
-version: 5
+version: 6
 project:
   name: auto
 paths:
@@ -86,11 +86,15 @@ memory:
   vector_size: 64
 concurrency:
   sqlite:
-    busy_timeout_ms: 15000
+    busy_timeout_ms: 3000
   write_lock:
     enabled: true
-    timeout_seconds: 30
-    stale_seconds: 900
+    timeout_seconds: 5
+    stale_seconds: 300
+  qdrant_lock:
+    enabled: true
+    timeout_seconds: 2
+    stale_seconds: 300
   queue:
     enabled: true
     dir: .project-memory/runtime/write-queue

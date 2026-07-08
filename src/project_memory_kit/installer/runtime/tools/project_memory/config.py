@@ -88,8 +88,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "memory": {"max_context_chunks": 8, "vector_size": 64},
     "concurrency": {
-        "sqlite": {"busy_timeout_ms": 15000},
-        "write_lock": {"enabled": True, "timeout_seconds": 30, "stale_seconds": 900},
+        "sqlite": {"busy_timeout_ms": 3000},
+        "write_lock": {"enabled": True, "timeout_seconds": 5, "stale_seconds": 300},
+        "qdrant_lock": {"enabled": True, "timeout_seconds": 2, "stale_seconds": 300},
         "queue": {"enabled": True, "dir": ".project-memory/runtime/write-queue"},
     },
     "knowledge": {"max_context_items": 5},
@@ -132,12 +133,39 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return result
 
 
+def _int_value(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_config(config: dict[str, Any], source_version: int) -> dict[str, Any]:
+    if source_version >= 6:
+        return config
+    concurrency = config.setdefault("concurrency", {})
+    sqlite_cfg = concurrency.setdefault("sqlite", {})
+    if _int_value(sqlite_cfg.get("busy_timeout_ms")) == 15000:
+        sqlite_cfg["busy_timeout_ms"] = 3000
+    write_lock = concurrency.setdefault("write_lock", {})
+    if _int_value(write_lock.get("timeout_seconds")) == 30:
+        write_lock["timeout_seconds"] = 5
+    if _int_value(write_lock.get("stale_seconds")) == 900:
+        write_lock["stale_seconds"] = 300
+    qdrant_lock = concurrency.setdefault("qdrant_lock", {})
+    qdrant_lock.setdefault("enabled", True)
+    qdrant_lock.setdefault("timeout_seconds", 2)
+    qdrant_lock.setdefault("stale_seconds", 300)
+    return config
+
+
 def load_config(root: Path) -> dict[str, Any]:
     path = root / ".project-memory" / "config.yaml"
     if not path.exists() or yaml is None:
         return DEFAULT_CONFIG
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return deep_merge(DEFAULT_CONFIG, data)
+    source_version = _int_value(data.get("version"))
+    return normalize_config(deep_merge(DEFAULT_CONFIG, data), source_version)
 
 
 def config_path(root: Path, key: str) -> Path:

@@ -54,6 +54,10 @@ Multiple chats may read memory at the same time. Write commands use a short loca
 
 Use `./pmem lock clear` only for stale locks.
 
+`watch --serve` does not keep the write lock while it sleeps. If auto-index sees another active writer, it skips that pass and uses the current index.
+
+Embedded local Qdrant uses `.project-memory/runtime/qdrant.lock`. In `backend: auto`, busy vector access falls back to SQLite/BM25 instead of blocking for a long time.
+
 Optional modules are controlled in `config.yaml`:
 
 ```yaml
