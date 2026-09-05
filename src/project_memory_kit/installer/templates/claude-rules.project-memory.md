@@ -1,86 +1,13 @@
 # Project Memory Rules
 
-Use project memory before meaningful code, config, schema, dependency, API, test, build, routing, migration, auth, persistence, or architecture changes.
+Follow the shared **Local Project Memory Protocol** in `CLAUDE.md` (and `AGENTS.md` when present). Use the same exact project root and local database. These rules do not add a second startup sequence or expand the task.
 
-## Standard Start
+Start a meaningful task with one `pmem_context` or CLI context, then inspect the relevant sources. Reuse that context during the task; reset only for a new task. Doctor is for setup/runtime changes/malfunction, status for uncertain freshness. Refresh stale or changed indexed sources once, unless auto-index already verified the same inputs. Do not automatically repeat impact, knowledge/rationale context, or unchanged green checks.
 
-```bash
-./pmem doctor
-./pmem status
-./pmem impact --base HEAD --format markdown
-./pmem context --task "<current task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
-```
+For research, principles, prior decisions, and failures, open relevant records by ID and verify their sources. Add targeted knowledge/rationale context only for a gap in the initial result. Keep one current record per principle or explanation; update or retire obsolete records. Rationale contains verified reasons, alternatives, and evidence, never hidden chain-of-thought.
 
-Read the generated report before editing. Identify target files, target symbols, direct dependencies, reverse dependencies, affected tests, previous failures, project principles, and low-confidence graph areas.
+When available, `pmem_knowledge_add/update` and `pmem_rationale_add/update` write from an existing project-relative file under the same MCP root; CLI add/update is the fallback. Confirm `saved`, `completed: true`, and the returned record, then show/search. A queued or busy result is pending; inspect lock/queue state and drain only expected authorized operations after the writer finishes. Do not clear live locks or retry uncertain writes blindly. Omitted `links` on update preserves relations; `[]` clears them. `pmem_overview` and `pmem_relations` are bounded index/provenance reads, not proof of source freshness or truth.
 
-Run `./pmem index --mode changed` before editing only when `./pmem status` reports stale or missing files in the task area, retrieved context looks incomplete, or the task changes shared architecture, routes, API contracts, schemas, dependencies, or tests. Always run it after meaningful edits before final verification.
+For a bugfix, reproduce first, then verify the fix and affected contracts. Refresh impact/test recommendations only when the diff warrants it; recommendations do not authorize execution. In a non-Git container, Git impact/tests `unavailable` is not an empty successful diff. Use the shared explicit `--no-git-init` protocol for container installation; never initialize a parent workspace implicitly.
 
-## Research And Principles
-
-For product, UX, design, SEO, architecture, content, positioning, policy, or resource-behavior research:
-
-```bash
-./pmem knowledge context --task "<current task>" --out .project-memory/reports/KNOWLEDGE_CONTEXT.md
-```
-
-Open full Markdown records only when the short context is not enough.
-
-When a durable principle changes:
-
-```bash
-./pmem knowledge add --type "<research|architecture|seo|design|ux|product|decision>" --title "<title>" --file "<markdown file>"
-./pmem knowledge update --id "<knowledge id>" --file "<markdown file>"
-./pmem knowledge retire --id "<knowledge id>"
-```
-
-Use `knowledge update` for changed principles. Do not keep competing `current` records for the same rule.
-
-## Rationale
-
-For "why", rejected approaches, previous failures, experiments, invariants, and architecture/tool/storage choices:
-
-```bash
-./pmem rationale context --task "<current task>" --out .project-memory/reports/RATIONALE_CONTEXT.md
-```
-
-When a durable cause or decision changes:
-
-```bash
-./pmem rationale add --type "<decision|rejection|experiment|constraint>" --title "<title>" --file "<markdown file>"
-./pmem rationale update --id "<rationale id>" --file "<markdown file>"
-./pmem rationale retire --id "<rationale id>"
-```
-
-Rationale records should point to facts such as tests, logs, diffs, files, failures, or commits.
-
-## Verification
-
-After edits:
-
-```bash
-./pmem index --mode changed
-./pmem impact --base HEAD --format markdown
-./pmem tests --base HEAD --explain
-```
-
-Run the targeted test commands returned by `./pmem tests --base HEAD`.
-
-When a test fails:
-
-```bash
-mkdir -p .project-memory/logs
-./pmem record-failure --command "<failed command>" --log-file "<log path>"
-./pmem context --task "fix failing tests after current change" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md
-```
-
-## Context Hygiene
-
-Use local tools to inspect large files, logs, reports, and test output. Summarize only the relevant result in the working context. Open full files or long logs only when local summaries are not enough.
-
-Before committing security-sensitive changes:
-
-```bash
-./pmem audit --secrets
-```
-
-Never index, print, or store secrets.
+Record only relevant sanitized failure evidence with `./pmem record-failure` when useful, then repair and rerun invalidated checks. For security-sensitive changes, select the relevant secret-safety audit. Inspect large files and logs locally; share only necessary findings, paths, IDs, and short excerpts. Never index, print, or store secrets.

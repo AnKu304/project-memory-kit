@@ -11,6 +11,9 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_text, stable_id
 from tools.project_memory.services.search import search as global_search
+from tools.project_memory.services.memory_relations import (
+    links_from_markdown, load_links, save_links, validate_links, with_links,
+)
 from tools.project_memory.time_utils import utc_now
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
@@ -291,26 +294,8 @@ def _index_entry(
         vectors.close()
 
 
-def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str]) -> None:
-    now = utc_now()
-    with store.connect() as conn:
-        conn.execute("DELETE FROM knowledge_links WHERE knowledge_id = ?", (entry_id,))
-        for raw in links:
-            value = str(raw).strip()
-            if not value:
-                continue
-            relation, _, target = value.partition(":")
-            if not target:
-                relation, target = "relates_to", relation
-            link_id = stable_id("knowledge-link", entry_id, relation, target)
-            conn.execute(
-                """
-                INSERT INTO knowledge_links(id, knowledge_id, relation, target, properties_json, created_at)
-                VALUES (?, ?, ?, ?, '{}', ?)
-                ON CONFLICT(id) DO UPDATE SET relation=excluded.relation, target=excluded.target
-                """,
-                (link_id, entry_id, relation, target, now),
-            )
+def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str | dict]) -> None:
+    save_links(store, "knowledge", entry_id, links)
 
 
 def add_knowledge(
@@ -323,7 +308,7 @@ def add_knowledge(
     source: str | None = None,
     summary: str | None = None,
     supersedes: str | None = None,
-    links: Iterable[str] | None = None,
+    links: Iterable[str | dict] | None = None,
 ) -> KnowledgeResult:
     store = _store(root)
     item_type = _normalize_type(item_type)
@@ -334,6 +319,9 @@ def add_knowledge(
         raise ValueError(f"superseded knowledge entry not found: {supersedes}")
 
     content = _read_source(root, file_path)
+    link_values = validate_links(store, "knowledge", entry_id,
+                                 links if links is not None else links_from_markdown(content),
+                                 owner_path=_entry_path(root, item_type, entry_id))
     tag_list = _tags(tags)
     status = CURRENT
     version = 1
@@ -341,6 +329,7 @@ def add_knowledge(
     path = _entry_path(root, item_type, entry_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     rendered = _render_markdown(entry_id, item_type, title, status, version, source, tag_list, supersedes, content)
+    rendered = with_links(rendered, link_values, "knowledge")
     path.write_text(rendered, encoding="utf-8")
     rel = _relative(root, path)
     now = utc_now()
@@ -369,7 +358,7 @@ def add_knowledge(
                 now,
             ),
         )
-    _save_links(store, entry_id, links or [])
+    _save_links(store, entry_id, link_values)
     if supersedes:
         retire_knowledge(root, supersedes, status=SUPERSEDED)
     _index_entry(root, store, entry_id, item_type, title, status, version, rel, summary_value, rendered, tag_list)
@@ -385,7 +374,7 @@ def update_knowledge(
     tags: Iterable[str] | None = None,
     source: str | None = None,
     summary: str | None = None,
-    links: Iterable[str] | None = None,
+    links: Iterable[str | dict] | None = None,
 ) -> KnowledgeResult:
     store = _store(root)
     entry_id = _slugify(entry_id)
@@ -394,6 +383,10 @@ def update_knowledge(
         raise ValueError(f"knowledge entry not found: {entry_id}")
 
     content = _read_source(root, file_path)
+    # None preserves existing assertions, including stale evidence revisions.
+    link_values = (load_links(store, "knowledge", entry_id) if links is None
+                   else validate_links(store, "knowledge", entry_id, links,
+                                       owner_path=_entry_path(root, _normalize_type(item_type or row["type"]), entry_id)))
     next_type = _normalize_type(item_type or row["type"])
     next_title = title or row["title"]
     next_tags = _tags(tags if tags is not None else json.loads(row["tags_json"] or "[]"))
@@ -415,6 +408,7 @@ def update_knowledge(
         row["supersedes"],
         content,
     )
+    rendered = with_links(rendered, link_values, "knowledge")
     path.write_text(rendered, encoding="utf-8")
     rel = _relative(root, path)
     if old_path != rel:
@@ -446,7 +440,7 @@ def update_knowledge(
             ),
         )
     if links is not None:
-        _save_links(store, entry_id, links)
+        _save_links(store, entry_id, link_values)
     _index_entry(root, store, entry_id, next_type, next_title, status, version, rel, summary_value, rendered, next_tags)
     return KnowledgeResult(entry_id, next_type, next_title, status, version, rel)
 

@@ -8,6 +8,72 @@ Version changes: [CHANGELOG.md](CHANGELOG.md)
 
 The goal is simple: several chats can work on one project without losing dependency context.
 
+## Local project memory
+
+PMEM serves agents with bounded context, search, dependencies, knowledge and
+decision rationale. Code is not the only source: marketing, design, research
+and analytics may live in the same isolated project.
+
+- L1: current task state and working context.
+- L2: project sources, durable knowledge and decision evidence.
+- L3: explicitly assigned shared rules/skills, not a merged private-project database.
+
+These are logical levels, not three copies. Project scope, memory purpose,
+subject domain and audience (`project`/`agent_tooling`) are independent.
+Default search excludes agent tooling; `--audience all` includes it only within
+the same root. It grants no access to other projects.
+
+Causal and other relations retain source SHA-256 and lifecycle. They remain
+assertions, not automatically proven causes.
+[Layer and relation contract](docs/memory-layers-and-relations.md).
+
+## Non-Git project container
+
+For an explicitly selected project folder containing separate code repositories:
+
+```bash
+pmem init --target "/path/Working projects/Project name" --no-git-init --agent multiagent
+```
+
+Upgrade preserves this mode and never initializes Git in the container. Do not
+select the parent Working projects folder or Desktop. Code and allowed text
+materials inside the chosen root are eligible; `agent/`, archives, sensitive
+paths, databases, runtime and symlink sources are excluded. Marketing need not
+be copied into Git. Run `./pmem index --mode full` separately after checking scope.
+Installation starts no watcher and does not index neighbouring projects by default.
+
+Git diff/impact and Git-based test selection are **unavailable** at a non-Git
+container root. Nested repositories are indexed as sources, but cross-repository
+Git diff is not implemented. Use the relevant repository and its tools for exact
+Git impact; empty change lists are not evidence of safety.
+
+## MCP reads and writes
+
+The installed `./pmem mcp-config --root "/exact/root" --format json` emits configuration.
+One MCP serves one root. A configuration file does not prove the client has
+loaded the server: verify `tools/list` and actual operations.
+
+`pmem_overview` returns a bounded index map without models/scanning;
+`pmem_relations` returns assertions and source status. CLI equivalents:
+
+```bash
+./pmem overview --limit 20
+./pmem relations --kind knowledge --id decision-id --limit 20
+```
+
+`pmem_knowledge_add/update` and `pmem_rationale_add/update` use the existing
+write lock/queue. `file` must already exist relative to this root. `links` accepts
+legacy strings/structured assertions; omitted update links preserve the batch,
+`[]` clears it. CLI supports `--links-json` and legacy `--link`.
+`queued`, `completed=false`, `record=null` means pending, not persisted.
+Verify returned ID/version with show and focused search after a saved write.
+
+Local Qdrant/FastEmbed is optional. Busy-vector search returns available
+lexical/graph results with explicit degradation, not a semantic-success claim.
+Context reuses embeddings only within one request, without a resident server.
+Full database restore from Markdown and cross-project shared retrieval are not
+implemented. Tencent's web UI is not required.
+
 ## What It Installs
 
 Profiles:
@@ -80,24 +146,21 @@ pipx run --no-cache --spec git+https://github.com/AnKu304/project-memory-kit.git
 
 ## Agent Workflow
 
-Before editing:
+Start a meaningful task with one MCP `pmem_context` call or CLI context:
 
 ```bash
-./pmem doctor
-./pmem tasks check
-./pmem impact --base HEAD --format markdown
 ./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
-./pmem context --task "<task>" --base HEAD --compiled --out .project-memory/reports/COMPILED_CONTEXT.md
 ```
 
-Context stays bounded: short snippets, ids, and paths to full records. Large files, logs, and reports are inspected with local commands first; only the relevant result or short excerpt goes into the model context.
+Run doctor on setup, runtime/configuration changes, or malfunction, not every task. If `.agents/tasks/` exists, inspect `./pmem tasks check`. For a complex task, choose `--compiled` instead of ordinary context; do not automatically run both.
 
-Run `./pmem index --mode changed` before editing only when `./pmem status` shows stale/missing files in the task area, context looks incomplete, or the task changes shared routes, API contracts, schemas, dependencies, tests, or architecture.
+Context already includes impact, search, knowledge/rationale, failures, and test recommendations. Open relevant sources and records by ID; fetch full text only when excerpts are insufficient.
 
-After editing:
+Run `./pmem index --mode changed` for stale/missing sources or after indexed files change before handoff, unless auto-index already verified the same inputs. Use `./pmem status` when uncertain. Changed mode may inspect the entire allowed root; it is not a path-only API. Initial full indexing requires an explicitly selected project.
+
+After changes, refresh impact and test selection when needed:
 
 ```bash
-./pmem index --mode changed
 ./pmem impact --base HEAD --format markdown
 ./pmem tests --base HEAD
 ```
@@ -130,6 +193,12 @@ If another chat is writing, the command waits for `concurrency.write_lock.timeou
 `watch --serve` does not hold the global write lock between checks. If auto-index sees an active writer from another chat, it skips the current pass quickly and uses the existing index.
 
 Indexing and audit use a pruned project walker: ignored directories such as `node_modules/`, `.project-memory/`, `.playwright-cli/`, `.playwright-mcp/`, `.turbo/`, and `coverage/` are skipped before descent.
+
+The binary-content probe reads only the first 2 KB instead of loading the whole
+file into memory. Freshness checks read one indexed-hash snapshot instead of
+opening a SQLite connection per file; source contents are still hashed, with
+no TTL cache that could hide changes. These optimize specific operations,
+not guarantee a fixed RAM footprint for the entire system.
 
 ## Core Commands
 
@@ -255,6 +324,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.23.0`: isolated containers, sourced relations, MCP writes and resource optimizations.
 - `0.22.2`: Pruned Traversal Fix; status/index/context/audit skip ignored heavy directories before descent.
 - `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.
 - `0.22.0`: Multi-chat Write Concurrency; SQLite timeout, managed write lock, stale lock cleanup, write queue, Qdrant server URL.

@@ -4,23 +4,14 @@ description: Implement scoped frontend, backend, or integration changes using pr
 tools: Read, Grep, Glob, Bash, Edit, MultiEdit, Write
 ---
 
-You implement scoped changes only after reading the project-memory context.
+Owns scoped code changes.
 
-Before editing:
+Follow the Local Project Memory Protocol in `CLAUDE.md`: start with one bounded context (or reuse the current task context), inspect relevant sources, and refresh only stale or changed inputs. This role adds no separate mandatory preflight.
 
-```bash
-./pmem context --task "<task>" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
-./pmem impact --base HEAD --format markdown
-```
+Inspect affected callers and contracts before editing. For a bugfix, reproduce first, verify the fix, then cover affected contracts. Update impact/test recommendations only for a changed diff and do not repeat unchanged green checks. Non-Git `unavailable` is not proof of no changes.
 
-After editing:
+If a test fails, retain relevant sanitized evidence with `./pmem record-failure` when useful; update context only to resolve the failure. Follow the shared MCP/CLI completion and queue rules for durable records. Keep changes and handoffs within the assigned task. Never index, print, or store secrets.
 
-```bash
-./pmem index --mode changed
-./pmem impact --base HEAD --format markdown
-./pmem tests --base HEAD --explain
-```
-
-Run targeted tests. If a test fails, store the failure with `./pmem record-failure` and continue from the updated context.
+Use MCP tools only when available to this role; otherwise use the permitted CLI fallback. Existing tool permissions and task scope still apply.
 
 Write handoff tasks in English, with an optional short Russian subtitle in the title.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,16 @@ def _language_for_path(path: str) -> str | None:
     return None
 
 
+class ManagedConnection(sqlite3.Connection):
+    """A store operation owns its connection as well as its transaction."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class SQLiteGraphStore:
     def __init__(self, root: Path, db_path: Path):
         self.root = root
@@ -32,12 +43,16 @@ class SQLiteGraphStore:
     def connect(self) -> sqlite3.Connection:
         cfg = load_config(self.root)
         timeout_ms = int(cfg.get("concurrency", {}).get("sqlite", {}).get("busy_timeout_ms", 15000))
-        conn = sqlite3.connect(self.db_path, timeout=max(timeout_ms / 1000, 0.1))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA synchronous = NORMAL")
-        conn.execute(f"PRAGMA busy_timeout = {timeout_ms}")
+        conn = sqlite3.connect(self.db_path, timeout=max(timeout_ms / 1000, 0.1), factory=ManagedConnection)
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+            conn.execute(f"PRAGMA busy_timeout = {timeout_ms}")
+        except BaseException:
+            conn.close()
+            raise
         return conn
 
     def initialize(self) -> None:
@@ -143,20 +158,28 @@ class SQLiteGraphStore:
 
     def clear_generated_file_memory(self, path: str) -> None:
         with self.connect() as conn:
-            conn.execute("DELETE FROM chunks_fts WHERE path = ?", (path,))
+            conn.execute("DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM nodes WHERE kind = 'Chunk' AND path = ?)", (path,))
             conn.execute("DELETE FROM nodes WHERE kind IN ('Symbol', 'Chunk', 'Route') AND path = ?", (path,))
             conn.execute("DELETE FROM file_index_state WHERE path = ?", (path,))
 
     def clear_removed_file_memory(self, path: str) -> None:
+        # The source walker does not own durable Knowledge/Rationale projections.
+        # Legacy manifests may contain their Markdown paths; pruning a source
+        # must not delete independently maintained memory chunks or their FTS.
         with self.connect() as conn:
-            conn.execute("DELETE FROM chunks_fts WHERE path = ?", (path,))
-            conn.execute("DELETE FROM nodes WHERE path = ?", (path,))
+            conn.execute("DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM nodes WHERE kind = 'Chunk' AND path = ?)", (path,))
+            conn.execute("DELETE FROM nodes WHERE kind IN ('File', 'Module', 'Symbol', 'Chunk', 'Route') AND path = ?", (path,))
             conn.execute("DELETE FROM file_index_state WHERE path = ?", (path,))
 
     def indexed_file_paths(self) -> set[str]:
         with self.connect() as conn:
             rows = conn.execute("SELECT path FROM file_index_state").fetchall()
         return {str(row["path"]) for row in rows}
+
+    def indexed_file_hashes(self) -> dict[str, str]:
+        """Read one manifest snapshot instead of opening a connection per file."""
+        with closing(self.connect()) as conn:
+            return {str(row["path"]): row["hash"] for row in conn.execute("SELECT path, hash FROM file_index_state")}
 
     def update_file_state(self, path: str, file_hash: str, parser: str, warnings: list[str]) -> None:
         with self.connect() as conn:

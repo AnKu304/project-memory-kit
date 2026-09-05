@@ -1,6 +1,6 @@
 {
   "name": "@anku/project-memory-kit",
-  "version": "0.22.2",
+  "version": "0.23.0",
   "description": "Local-first project memory installer for coding agents",
   "license": "MIT",
   "author": "AnKu304",
@@ -41,6 +41,7 @@
     "npm/bin/pmem.js",
     "npm/scripts/*.js",
     "docs/npm.md",
+    "docs/memory-layers-and-relations.md",
     "docs/release-notes/*.md",
     "docs/checklists/*.md",
     "README.md",

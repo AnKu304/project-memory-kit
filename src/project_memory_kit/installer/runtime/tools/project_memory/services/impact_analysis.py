@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.project_memory.config import config_path, load_config
-from tools.project_memory.git_diff import changed_files, diff_ranges
+from tools.project_memory.git_diff import changed_files, diff_ranges, git_available, git_limitation
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.services.auto_index import ensure_fresh_index
 
@@ -129,6 +129,10 @@ def _linked_test_targets(root: Path, store: SQLiteGraphStore, file_id: str, path
 
 
 def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
+    if not git_available(root):
+        return {"base": base, "git_available": False, "impact_status": "unavailable",
+                "diagnostics": [git_limitation(root)], "changed_files": [], "touched_symbols": [],
+                "affected_files": [], "route_impacts": [], "tests": [], "risk": "unknown"}
     ensure_fresh_index(root, "impact")
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
@@ -216,6 +220,10 @@ def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
 def format_impact(report: dict[str, Any], fmt: str = "markdown") -> str:
     if fmt == "json":
         return json.dumps(report, indent=2, sort_keys=True)
+    if not report.get("git_available", True):
+        return "\n".join(["# Impact Report", "", f"Base: `{report['base']}`", "Risk: **unknown**", "",
+                          *(f"- {item}" for item in report.get("diagnostics", [])),
+                          "- Empty change/test lists do not establish safety. Use bounded search and select checks from actual source changes."]) + "\n"
     lines = [
         "# Impact Report",
         "",

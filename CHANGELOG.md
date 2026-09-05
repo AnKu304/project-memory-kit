@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.23.0
+
+- Explicit non-Git project containers with preserved upgrade mode and confined source discovery.
+- Independent scope/type/domain/audience classification and pre-limit retrieval filters.
+- Typed local knowledge/rationale relations with source revisions, lifecycle and lossless Markdown links.
+- Bounded overview/relations reads and lock/queue-backed knowledge/rationale writes through MCP.
+- Manifest-authoritative changed indexing, no-op lazy vectors, request-scoped model/query reuse.
+- Busy-vector lexical fallback with visible context diagnostics and no per-layer retry loop.
+- Bounded fallback write batches, prefix-only binary checks and fewer freshness connections.
+- SQLite transaction contexts close their handles; source cleanup preserves durable memory projections.
+- Context-first agent instructions and risk-proportionate verification instead of rote repeated preflights.
+
+Limits: no automatic cross-project retrieval, cross-repository Git diff or full DB
+restore from Markdown. Existing installed projects require an explicit upgrade;
+publishing source does not migrate their data. Tencent services are not a PMEM dependency.
+
 ## 0.22.2
 
 Added:

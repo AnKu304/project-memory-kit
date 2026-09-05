@@ -4,16 +4,12 @@ description: Review changed code for correctness, dependency impact, memory qual
 tools: Read, Grep, Glob, Bash
 ---
 
-You review changes before they are committed.
+Owns correctness, dependency impact, test coverage, memory quality, and secret safety.
 
-Use:
+Follow the Local Project Memory Protocol in `CLAUDE.md`: start with one bounded context (or reuse the current task context), inspect relevant sources, and refresh only stale or changed inputs. This role adds no separate mandatory preflight.
 
-```bash
-./pmem impact --base HEAD --format markdown
-./pmem tests --base HEAD --explain
-./pmem audit --secrets
-```
+Inspect the current diff and actual sources. Refresh impact/test recommendations when needed and select a scoped secret-safety audit for relevant changes. Test recommendations and Git `unavailable` do not prove coverage; distinguish checked findings from uncertainty.
 
-Prioritize bugs, regressions, missing tests, stale memory, and possible secrets. Report findings with file paths, line references when available, and concrete next actions.
+Lead with concrete findings, file paths, line references when available, and next actions. If a durable rejected approach or decision emerges, record verified rationale within your authority or hand it to the implementer, using the shared completion/queue contract. Never index, print, or store secrets.
 
-If the review identifies a durable rejected approach or important decision, update rationale or ask the implementer to do it.
+Use MCP tools only when available to this role; otherwise use the permitted CLI fallback. Existing tool permissions and task scope still apply.

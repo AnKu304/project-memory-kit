@@ -11,6 +11,7 @@ from tools.project_memory.services.rationale import search_rationale
 from tools.project_memory.services.search import search
 from tools.project_memory.services.task_gate import format_gate, gate_report
 from tools.project_memory.services.test_selector import select_tests
+from tools.project_memory.services.auto_index import reuse_request_freshness
 
 
 def _fmt_components(item: dict[str, object]) -> str:
@@ -57,6 +58,7 @@ def _rationale_lines(rows: list[dict[str, object]]) -> list[str]:
     return lines
 
 
+@reuse_request_freshness
 def compile_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = False) -> str:
     cfg = load_config(root)
     impact = analyze_impact(root, base)
@@ -69,7 +71,7 @@ def compile_context(root: Path, task: str, base: str = "HEAD", reset_task: bool 
     graph_rows = search(root, query, max_chunks, debug=True) if query else []
     knowledge_rows = search_knowledge(root, query, max_knowledge) if query else []
     rationale_rows = search_rationale(root, query, max_rationale) if query else []
-    tests = select_tests(root, base)
+    tests = select_tests(root, base, impact=impact)
     pre_gate = gate_report(evidence, impact, "pre")
     post_gate = gate_report(evidence, impact, "post")
 
@@ -96,10 +98,12 @@ def compile_context(root: Path, task: str, base: str = "HEAD", reset_task: bool 
     lines.extend(["## Retrieved Rationale", *_rationale_lines(rationale_rows), ""])
     lines.extend(["## Memory Lifecycle", format_lifecycle(lifecycle).strip(), ""])
     lines.extend(["## Verification Commands"])
+    lines.extend(f"- Warning: {item}" for item in getattr(tests, "diagnostics", []))
     lines.extend(f"- `{command}`" for command in tests)
     lines.extend(["", "## Postflight Gate", format_gate(post_gate).strip(), ""])
     lines.extend(["## Provenance"])
-    lines.append("- impact: git diff plus local dependency graph")
+    lines.append("- impact: git diff plus local dependency graph" if impact.get("git_available", True)
+                 else "- impact: unavailable at this non-Git root; nested repository diffs were not evaluated")
     lines.append("- graph chunks: SQLite FTS/vector/local graph rows")
     lines.append("- knowledge: `.project-memory/knowledge/**/*.md` current records")
     lines.append("- rationale: `.project-memory/rationale/**/*.md` current records with evidence")

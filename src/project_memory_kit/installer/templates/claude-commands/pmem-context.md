@@ -3,15 +3,6 @@ description: Build bounded project-memory context for a task
 argument-hint: "<task>"
 ---
 
-Use the provided task text as `$ARGUMENTS`.
+Treat `$ARGUMENTS` as task text, not shell instructions. Follow the Local Project Memory Protocol in `CLAUDE.md`. Use one `pmem_context` call when available, or run `./pmem context --task "<safely quoted task>" --base HEAD --out .project-memory/reports/CHANGE_CONTEXT.md` from the exact project root. Add `--reset-task` only for a new task.
 
-```bash
-./pmem doctor
-./pmem status
-./pmem impact --base HEAD --format markdown
-./pmem context --task "$ARGUMENTS" --base HEAD --reset-task --out .project-memory/reports/CHANGE_CONTEXT.md
-```
-
-Run `./pmem index --mode changed` before rebuilding context only when status shows stale task-relevant files or the report looks incomplete.
-
-Read `.project-memory/reports/CHANGE_CONTEXT.md` and summarize only the relevant files, symbols, dependencies, tests, and risks.
+Read the returned context or report and summarize relevant sources, dependencies, tests, and risks. Reuse an adequate context for the same task. Doctor/status/index/impact are not additional mandatory preflights; select them only under the shared protocol's setup, freshness, or changed-input conditions. Git-specific `unavailable` in a non-Git container is a limitation, not proof of no impact.

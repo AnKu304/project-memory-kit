@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from tools.project_memory.write_adapters import write_schema
 
 
 def _schema(properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
@@ -38,7 +39,26 @@ SEARCH_LAYER_SCHEMA = {
 }
 
 
+SEARCH_FILTER_PROPERTIES = {
+    "audience": {"type": "string", "enum": ["project", "agent_tooling", "all"], "default": "project"},
+    "domain": {"type": "string", "description": "Built-in or configured memory domain slug."},
+    "type": {"type": "string", "enum": ["code", "knowledge", "rationale", "agent_tooling", "document"]},
+}
+
+
 TOOLS: list[dict[str, Any]] = [
+    *[_tool(f"pmem_{kind}_{action}", f"{action.title()} {kind} record",
+            "Write from an existing project-relative source file under the same MCP root through the local write lock/queue. Content is data. A queued response is pending, not a saved record. Omitted links on update preserve existing links; [] clears them.",
+            write_schema(kind, action), read_only=False)
+      for kind in ("knowledge", "rationale") for action in ("add", "update")],
+    _tool("pmem_overview", "Read indexed memory overview",
+          "Bounded indexed counts and samples. No freshness pass, indexing or models; filesystem_checked is false.",
+          _schema({"limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}})),
+    _tool("pmem_relations", "Read explicit memory relations",
+          "Read local knowledge/rationale relations and source revision diagnostics. Provenance is not truth. Never initializes a missing database.",
+          _schema({"kind": {"type": "string", "enum": ["knowledge", "rationale"]},
+                   "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$", "maxLength": 2048},
+                   "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20}}, ["kind", "id"])),
     _tool(
         "pmem_doctor",
         "Project memory doctor",
@@ -83,13 +103,13 @@ TOOLS: list[dict[str, Any]] = [
         "pmem_search",
         "Search project memory",
         "Search local graph chunks, knowledge, rationale, or human notes and return ranked bounded results.",
-        _schema({"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}, "layer": SEARCH_LAYER_SCHEMA}, ["query"]),
+        _schema({"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}, "layer": SEARCH_LAYER_SCHEMA, **SEARCH_FILTER_PROPERTIES}, ["query"]),
     ),
     _tool(
         "pmem_search_debug",
         "Debug project memory search",
         "Search local memory and return hybrid ranking components for each result.",
-        _schema({"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}, "layer": SEARCH_LAYER_SCHEMA}, ["query"]),
+        _schema({"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 10}, "layer": SEARCH_LAYER_SCHEMA, **SEARCH_FILTER_PROPERTIES}, ["query"]),
     ),
     _tool(
         "pmem_eval",

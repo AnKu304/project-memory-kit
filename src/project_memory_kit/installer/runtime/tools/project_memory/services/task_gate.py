@@ -20,8 +20,9 @@ def gate_report(evidence: dict[str, Any], impact: dict[str, Any], phase: str = "
         },
         {
             "name": "impact_available",
-            "ok": True,
-            "detail": f"risk={impact['risk']} changed={len(impact['changed_files'])}",
+            "ok": impact.get("git_available", True),
+            "detail": f"risk={impact['risk']} changed={len(impact['changed_files'])}" if impact.get("git_available", True)
+                      else "Git impact unavailable; empty changes are not a safety assessment",
         },
         {
             "name": "tests_selected",

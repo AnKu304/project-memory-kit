@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from tools.project_memory.write_adapters import parse_links_json
 from collections.abc import Callable
 
 
@@ -21,6 +22,9 @@ def add_knowledge_parser(sub: argparse._SubParsersAction, handler: CommandHandle
     k.add_argument("--summary")
     k.add_argument("--supersedes")
     k.add_argument("--link", action="append")
+    k.add_argument("--links-json", type=parse_links_json, help="JSON array of legacy strings or structured relations; combined with --link")
+    k.add_argument("--project-local", action="store_true", help=argparse.SUPPRESS)
+    k.add_argument("--clear-list", action="append", choices=["tags"], help=argparse.SUPPRESS)
     k.set_defaults(func=handler)
 
     k = knowledge_sub.add_parser("update")
@@ -32,6 +36,9 @@ def add_knowledge_parser(sub: argparse._SubParsersAction, handler: CommandHandle
     k.add_argument("--source")
     k.add_argument("--summary")
     k.add_argument("--link", action="append")
+    k.add_argument("--links-json", type=parse_links_json, help="JSON array of legacy strings or structured relations; combined with --link")
+    k.add_argument("--project-local", action="store_true", help=argparse.SUPPRESS)
+    k.add_argument("--clear-list", action="append", choices=["tags"], help=argparse.SUPPRESS)
     k.set_defaults(func=handler)
 
     k = knowledge_sub.add_parser("search")
@@ -77,6 +84,9 @@ def add_rationale_parser(sub: argparse._SubParsersAction, handler: CommandHandle
     r.add_argument("--summary")
     r.add_argument("--supersedes")
     r.add_argument("--link", action="append")
+    r.add_argument("--links-json", type=parse_links_json, help="JSON array of legacy strings or structured relations; combined with --link")
+    r.add_argument("--project-local", action="store_true", help=argparse.SUPPRESS)
+    r.add_argument("--clear-list", action="append", choices=["tags", "rejected", "evidence"], help=argparse.SUPPRESS)
     r.set_defaults(func=handler)
 
     r = rationale_sub.add_parser("update")
@@ -92,6 +102,9 @@ def add_rationale_parser(sub: argparse._SubParsersAction, handler: CommandHandle
     r.add_argument("--source")
     r.add_argument("--summary")
     r.add_argument("--link", action="append")
+    r.add_argument("--links-json", type=parse_links_json, help="JSON array of legacy strings or structured relations; combined with --link")
+    r.add_argument("--project-local", action="store_true", help=argparse.SUPPRESS)
+    r.add_argument("--clear-list", action="append", choices=["tags", "rejected", "evidence"], help=argparse.SUPPRESS)
     r.set_defaults(func=handler)
 
     r = rationale_sub.add_parser("search")

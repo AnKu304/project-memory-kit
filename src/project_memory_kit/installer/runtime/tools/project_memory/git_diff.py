@@ -1,15 +1,33 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
 
 
+def non_git_container(root: Path) -> bool:
+    marker = root / ".project-memory" / "install.json"
+    try:
+        return json.loads(marker.read_text(encoding="utf-8")).get("installation_mode") == "non_git_container"
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def git_available(root: Path) -> bool:
-    return (root / ".git").exists()
+    return not non_git_container(root) and (root / ".git").exists()
+
+
+def git_limitation(root: Path) -> str | None:
+    if git_available(root):
+        return None
+    return ("Git impact and diff-based test selection are unavailable for this root. "
+            "Nested repositories are indexed as sources; cross-repository Git diff is not implemented.")
 
 
 def run_git(root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    if not git_available(root):
+        return subprocess.CompletedProcess(["git", *args], 1, "", git_limitation(root) or "Git unavailable")
     return subprocess.run(["git", *args], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 

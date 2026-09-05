@@ -133,6 +133,7 @@ def init_command(
     with_vector: bool = False,
     interactive: bool = False,
     input_func: Callable[[str], str] = input,
+    no_git_init: bool = False,
 ) -> None:
     choices: WizardChoices | None = None
     if interactive:
@@ -147,7 +148,11 @@ def init_command(
         runtime=runtime,
         run_index=index,
         with_vector=with_vector,
+        no_git_init=no_git_init,
     )
+    if not result.completed:
+        print(result.summary())
+        raise SystemExit(1)
     if choices:
         _run_post_install(root, choices)
     print(result.summary())
@@ -161,6 +166,7 @@ def install_command(
     index: bool = False,
     with_vector: bool = False,
     interactive: bool = False,
+    no_git_init: bool = False,
 ) -> None:
     init_command(
         target=target,
@@ -170,6 +176,7 @@ def install_command(
         index=index,
         with_vector=with_vector,
         interactive=interactive,
+        no_git_init=no_git_init,
     )
 
 
@@ -184,6 +191,8 @@ def upgrade_command(target: str = ".", agent: str = "auto", with_vector: bool = 
         with_vector=with_vector,
     )
     print(result.summary())
+    if not result.completed:
+        raise SystemExit(1)
 
 
 def uninstall_command(target: str = ".", purge: bool = False, keep_memory: bool = True) -> None:
@@ -196,42 +205,50 @@ if typer is not None:
 
     @app.command("init")
     def init_typer(
-        target: str = typer.Option(".", "--target", help="Repository root to install into."),
+        target: str | None = typer.Option(None, "--target", help="Explicit project root; required with --no-git-init."),
         agent: str = typer.Option("codex", "--agent", help="Agent profile: codex, claude, or multiagent."),
         profile: str = typer.Option("python", "--profile", help="Project language profile."),
         runtime: str = typer.Option("local", "--runtime", help="Runtime mode."),
         index: bool = typer.Option(False, "--index", help="Run first full index after install."),
         with_vector: bool = typer.Option(False, "--with-vector", help="Create a managed runtime venv with Qdrant/FastEmbed."),
         interactive: bool = typer.Option(False, "--interactive", help="Ask for profile and optional features."),
+        no_git_init: bool = typer.Option(False, "--no-git-init", help="Install in a non-Git container and preserve this mode on upgrade."),
     ) -> None:
+        if no_git_init and target is None:
+            raise typer.BadParameter("--no-git-init requires an explicit --target")
         init_command(
-            target=target,
+            target=target or ".",
             agent=agent,
             profile=profile,
             runtime=runtime,
             index=index,
             with_vector=with_vector,
             interactive=interactive,
+            no_git_init=no_git_init,
         )
 
     @app.command("install")
     def install_typer(
-        target: str = typer.Option(".", "--target", help="Repository root to install into."),
+        target: str | None = typer.Option(None, "--target", help="Explicit project root; required with --no-git-init."),
         agent: str = typer.Option("codex", "--agent", help="Agent profile: codex, claude, or multiagent."),
         profile: str = typer.Option("python", "--profile", help="Project language profile."),
         runtime: str = typer.Option("local", "--runtime", help="Runtime mode."),
         index: bool = typer.Option(False, "--index", help="Run first full index after install."),
         with_vector: bool = typer.Option(False, "--with-vector", help="Create a managed runtime venv with Qdrant/FastEmbed."),
         interactive: bool = typer.Option(False, "--interactive", help="Ask for profile and optional features."),
+        no_git_init: bool = typer.Option(False, "--no-git-init", help="Install in a non-Git container and preserve this mode on upgrade."),
     ) -> None:
+        if no_git_init and target is None:
+            raise typer.BadParameter("--no-git-init requires an explicit --target")
         install_command(
-            target=target,
+            target=target or ".",
             agent=agent,
             profile=profile,
             runtime=runtime,
             index=index,
             with_vector=with_vector,
             interactive=interactive,
+            no_git_init=no_git_init,
         )
 
     @app.command("upgrade")
@@ -296,13 +313,14 @@ def _argparse_main(argv: list[str]) -> int:
 
     for name in ["init", "install"]:
         p = sub.add_parser(name)
-        p.add_argument("--target", default=".")
+        p.add_argument("--target")
         p.add_argument("--agent", choices=["codex", "claude", "universal", "multiagent", "all"], default="codex")
         p.add_argument("--profile", default="python")
         p.add_argument("--runtime", default="local")
         p.add_argument("--index", action="store_true")
         p.add_argument("--with-vector", action="store_true")
         p.add_argument("--interactive", action="store_true")
+        p.add_argument("--no-git-init", action="store_true")
 
     p = sub.add_parser("upgrade")
     p.add_argument("--target", default=".")
@@ -345,7 +363,9 @@ def _argparse_main(argv: list[str]) -> int:
 
     ns = parser.parse_args(argv)
     if ns.command in {"init", "install"}:
-        init_command(ns.target, ns.agent, ns.profile, ns.runtime, ns.index, ns.with_vector, ns.interactive)
+        if ns.no_git_init and ns.target is None:
+            parser.error("--no-git-init requires an explicit --target")
+        init_command(ns.target or ".", ns.agent, ns.profile, ns.runtime, ns.index, ns.with_vector, ns.interactive, no_git_init=ns.no_git_init)
         return 0
     if ns.command == "upgrade":
         upgrade_command(ns.target, ns.agent, ns.with_vector)

@@ -9,8 +9,10 @@ from tools.project_memory.services.knowledge import search_knowledge
 from tools.project_memory.services.rationale import search_rationale
 from tools.project_memory.services.search import search
 from tools.project_memory.services.test_selector import select_tests
+from tools.project_memory.services.auto_index import reuse_request_freshness
 
 
+@reuse_request_freshness
 def build_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = False) -> str:
     impact = analyze_impact(root, base)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
@@ -23,7 +25,7 @@ def build_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = 
     search_rows = search(root, query, max_chunks) if query else []
     knowledge_rows = search_knowledge(root, query, max_knowledge) if query else []
     rationale_rows = search_rationale(root, query, max_rationale) if query else []
-    tests = select_tests(root, base)
+    tests = select_tests(root, base, impact=impact)
     failures = store.query(
         """
         SELECT fingerprint, error_kind, normalized_message, top_project_frame, last_seen_at, count
@@ -94,9 +96,12 @@ def build_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = 
     lines.append("- Treat low-confidence graph edges as prompts for manual inspection.")
     lines.append("- Never index or store secrets.")
     lines.extend(["", "## Verification Commands"])
+    lines.extend(f"- Warning: {item}" for item in getattr(tests, "diagnostics", []))
     lines.extend(f"- `{cmd}`" for cmd in tests)
     lines.extend(["", "## Low-Confidence Areas"])
-    if impact["touched_symbols"]:
+    if not impact.get("git_available", True):
+        lines.append("- Git impact is unavailable at this root; nested repository diffs and targeted test coverage are not established.")
+    elif impact["touched_symbols"]:
         lines.append("- CALLS/REFERENCES edges are approximate for dynamic dispatch and lexical parser fallback cases.")
     else:
         lines.append("- No touched symbols were mapped; run a full index or inspect the changed files manually.")
@@ -105,7 +110,8 @@ def build_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = 
     lines.append("- [ ] Inspect affected files and tests.")
     lines.append("- [ ] Make the smallest viable change.")
     lines.append("- [ ] Re-run `./pmem index --mode changed`.")
-    lines.append("- [ ] Re-run `./pmem impact --base HEAD --format markdown`.")
+    lines.append("- [ ] Re-run `./pmem impact --base HEAD --format markdown`." if impact.get("git_available", True)
+                 else "- [ ] Review actual nested-source changes manually; container-wide Git impact is unavailable.")
     lines.append("- [ ] Run targeted tests.")
     return "\n".join(lines) + "\n"
 

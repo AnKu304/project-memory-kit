@@ -31,6 +31,8 @@ from tools.project_memory.services.status import format_stale, format_status, pr
 from tools.project_memory.services.tasks import assign_task, close_task, create_task, format_tasks, list_tasks
 from tools.project_memory.services.test_selector import explain_tests, select_tests
 from tools.project_memory.mcp_tools import TOOLS
+from tools.project_memory.read_adapters import read_overview, read_relations
+from tools.project_memory.write_adapters import write_memory
 from tools.project_memory.version import __version__
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -93,6 +95,27 @@ def _tool_status(root: Path, _: dict[str, Any]) -> dict[str, Any]:
     return _text_result(format_status(report), {"status": report})
 
 
+
+def _tool_overview(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    if set(args) - {"limit"}:
+        raise ValueError("Unexpected overview arguments")
+    result = read_overview(root, args.get("limit", 20))
+    return _text_result(json.dumps(result, ensure_ascii=False), result)
+
+
+def _tool_relations(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    if set(args) - {"kind", "id", "limit"}:
+        raise ValueError("Unexpected relations arguments")
+    result = read_relations(root, args.get("kind"), args.get("id"), args.get("limit", 20))
+    return _text_result(json.dumps(result, ensure_ascii=False), result)
+
+
+
+def _tool_memory_write(root: Path, args: dict[str, Any], kind: str, action: str) -> dict[str, Any]:
+    result = write_memory(root, kind, action, args)
+    return _text_result(json.dumps(result, ensure_ascii=False), result, is_error=result["exit_code"] != 0)
+
+
 def _tool_context(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     task = str(args.get("task") or "").strip()
     if not task:
@@ -113,10 +136,18 @@ def _tool_tests(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     base = str(args.get("base") or "HEAD")
     if bool(args.get("explain", False)):
         text = explain_tests(root, base=base)
-        return _text_result(text, {"base": base, "explain": text})
+        return _text_result(text, {"base": base, "explain": text, "diagnostics": getattr(text, "diagnostics", [])})
     commands = select_tests(root, base=base)
     text = "\n".join(f"- `{command}`" for command in commands) if commands else "No targeted tests found."
-    return _text_result(text, {"base": base, "commands": commands})
+    diagnostics = getattr(commands, "diagnostics", [])
+    text = "\n".join([*(f"Warning: {item}" for item in diagnostics), text])
+    return _text_result(text, {"base": base, "commands": commands, "diagnostics": diagnostics})
+
+
+def _search_filters(args):
+    if any(key in args for key in ("scope", "root", "roots")):
+        raise ValueError("Search is restricted to the configured project root; shared/multi-root search is unsupported")
+    return {"audience": args.get("audience", "project"), "domain": args.get("domain"), "memory_type": args.get("type")}
 
 
 def _tool_search(root: Path, args: dict[str, Any]) -> dict[str, Any]:
@@ -131,8 +162,10 @@ def _tool_search(root: Path, args: dict[str, Any]) -> dict[str, Any]:
         layer_arg = layer
     else:
         return _text_result("layer must be `all`, `knowledge`, `rationale`, or `human`.", {"layer": layer}, is_error=True)
-    rows = search_service(root, query, limit, layer=layer_arg)
-    return _text_result(_format_search_rows(rows), {"query": query, "limit": limit, "layer": layer, "results": rows})
+    rows = search_service(root, query, limit, layer=layer_arg, **_search_filters(args))
+    diagnostics = getattr(rows, "diagnostics", [])
+    text = "\n".join([*(f"Warning: {item}" for item in diagnostics), _format_search_rows(rows)])
+    return _text_result(text, {"query": query, "limit": limit, "layer": layer, "results": rows, "diagnostics": diagnostics, "filters": {"scope": "project", "audience": args.get("audience", "project"), "domain": args.get("domain"), "type": args.get("type")}})
 
 
 def _tool_search_debug(root: Path, args: dict[str, Any]) -> dict[str, Any]:
@@ -144,11 +177,13 @@ def _tool_search_debug(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     layer_arg = None if layer == "all" else layer
     if layer_arg not in {None, "knowledge", "rationale", "human"}:
         return _text_result("layer must be `all`, `knowledge`, `rationale`, or `human`.", {"layer": layer}, is_error=True)
-    rows = search_service(root, query, limit, layer=layer_arg, debug=True)
+    rows = search_service(root, query, limit, layer=layer_arg, debug=True, **_search_filters(args))
     text = _format_search_rows(rows)
     if rows:
         text += "\n" + "\n".join(f"  components: {item.get('components', {})}" for item in rows)
-    return _text_result(text, {"query": query, "limit": limit, "layer": layer, "results": rows})
+    diagnostics = getattr(rows, "diagnostics", [])
+    text = "\n".join([*(f"Warning: {item}" for item in diagnostics), text])
+    return _text_result(text, {"query": query, "limit": limit, "layer": layer, "results": rows, "diagnostics": diagnostics, "filters": {"scope": "project", "audience": args.get("audience", "project"), "domain": args.get("domain"), "type": args.get("type")}})
 
 
 def _tool_eval(root: Path, args: dict[str, Any]) -> dict[str, Any]:
@@ -324,6 +359,12 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "pmem_doctor": _tool_doctor,
     "pmem_index": _tool_index,
     "pmem_status": _tool_status,
+    "pmem_overview": _tool_overview,
+    "pmem_relations": _tool_relations,
+    "pmem_knowledge_add": lambda root, args: _tool_memory_write(root, args, "knowledge", "add"),
+    "pmem_knowledge_update": lambda root, args: _tool_memory_write(root, args, "knowledge", "update"),
+    "pmem_rationale_add": lambda root, args: _tool_memory_write(root, args, "rationale", "add"),
+    "pmem_rationale_update": lambda root, args: _tool_memory_write(root, args, "rationale", "update"),
     "pmem_context": _tool_context,
     "pmem_impact": _tool_impact,
     "pmem_tests": _tool_tests,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+from functools import lru_cache
 import re
 import sqlite3
 from pathlib import Path
@@ -7,8 +9,72 @@ from typing import Any
 
 from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
-from tools.project_memory.services.auto_index import ensure_fresh_index
-from tools.project_memory.vector.qdrant_store import QdrantLocalStore
+from tools.project_memory.services.auto_index import (
+    ensure_fresh_index, request_vector_busy, request_freshness_diagnostics,
+    note_request_diagnostic, mark_request_vector_busy,
+)
+from tools.project_memory.services.memory_scope import (
+    AUDIENCES, DOMAINS, TYPES, classify_memory_path, validate_memory_classification, indexed_memory_metadata,
+)
+from tools.project_memory.vector.qdrant_store import QdrantLocalStore, VectorBackendBusyError
+
+
+class SearchResults(list):
+    """List-compatible ranked results with request-local availability details."""
+
+    def __init__(self, rows=(), *, diagnostics=()):
+        super().__init__(rows)
+        self.diagnostics = list(diagnostics)
+
+
+SEMANTIC_BUSY = "Semantic search unavailable: local Qdrant is busy; returning SQLite/BM25 and graph-ranked results."
+
+
+class SearchFilter:
+    def __init__(self, root, cfg, audience="project", domain=None, memory_type=None):
+        validate_memory_classification(cfg)
+        domains = DOMAINS | set(cfg.get("memory", {}).get("classification", {}).get("domains", []))
+        if not isinstance(audience, str) or audience not in AUDIENCES | {"all"}:
+            raise ValueError("audience must be project, agent_tooling, or all")
+        if domain is not None and (not isinstance(domain, str) or domain not in domains):
+            raise ValueError(f"Unknown memory domain: {domain}")
+        if memory_type is not None and (not isinstance(memory_type, str) or memory_type not in TYPES):
+            raise ValueError(f"Unknown memory type: {memory_type}")
+        self.audience, self.domain, self.memory_type = audience, domain, memory_type
+
+        @lru_cache(maxsize=1024)
+        def metadata(path):
+            try:
+                return classify_memory_path(root, path, cfg)
+            except ValueError:
+                return None  # Outside-root and symlink escapes never qualify.
+        self.metadata = metadata
+
+    def matches(self, path):
+        data = self.metadata(path)
+        return bool(data and data["memory_scope"] == "project"
+                    and (self.audience == "all" or data["memory_audience"] == self.audience)
+                    and (self.domain is None or data["memory_domain"] == self.domain)
+                    and (self.memory_type is None or data["memory_type"] == self.memory_type))
+
+    def query(self, store, sql, args):
+        with closing(store.connect()) as connection:
+            connection.create_function("pmem_path_matches", 1, self.matches)
+            return connection.execute(sql, args).fetchall()
+
+    def metadata_stale(self, store):
+        snapshot = indexed_memory_metadata(store)
+        return not snapshot or any(self.metadata(path) != metadata for path, metadata in snapshot.items())
+
+    def payload_filter(self):
+        values = {"memory_scope": "project"}
+        if self.audience != "all":
+            values["memory_audience"] = self.audience
+        if self.domain:
+            values["memory_domain"] = self.domain
+        if self.memory_type:
+            values["memory_type"] = self.memory_type
+        return {"must": [{"key": key, "match": {"value": value}} for key, value in values.items()]}
 
 
 def _terms(query: str) -> list[str]:
@@ -265,21 +331,21 @@ def format_search_result(item: dict[str, Any], debug: bool = False) -> str:
     return line
 
 
-def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | None = None) -> list[dict[str, object]]:
+def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | None = None, *, filters: SearchFilter) -> list[dict[str, object]]:
     safe_query = _fts_query(query)
     layer_join = "JOIN nodes n ON n.id = chunks_fts.chunk_id" if layer else ""
     layer_where = "AND n.layer = ?" if layer else ""
     args: tuple[object, ...] = (safe_query, layer, limit) if layer else (safe_query, limit)
     used_bm25 = True
     try:
-        rows = store.query(
+        rows = filters.query(store,
             f"""
             SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
                    snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet,
                    bm25(chunks_fts) AS bm25_rank
             FROM chunks_fts
             {layer_join}
-            WHERE chunks_fts MATCH ?
+            WHERE chunks_fts MATCH ? AND pmem_path_matches(chunks_fts.path)
             {layer_where}
             ORDER BY bm25_rank ASC
             LIMIT ?
@@ -290,14 +356,14 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
             any_query = _fts_query_any(query)
             if any_query != safe_query:
                 args = (any_query, layer, limit) if layer else (any_query, limit)
-                rows = store.query(
+                rows = filters.query(store,
                     f"""
                     SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
                            snippet(chunks_fts, 3, '[', ']', '...', 16) AS snippet,
                            bm25(chunks_fts) AS bm25_rank
                     FROM chunks_fts
                     {layer_join}
-                    WHERE chunks_fts MATCH ?
+                    WHERE chunks_fts MATCH ? AND pmem_path_matches(chunks_fts.path)
                     {layer_where}
                     ORDER BY bm25_rank ASC
                     LIMIT ?
@@ -307,13 +373,13 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
     except sqlite3.Error:
         used_bm25 = False
         args = (f"%{query[:80]}%", layer, limit) if layer else (f"%{query[:80]}%", limit)
-        rows = store.query(
+        rows = filters.query(store,
             f"""
             SELECT chunks_fts.chunk_id, chunks_fts.path, chunks_fts.fqn,
                    substr(content, 1, 240) AS snippet
             FROM chunks_fts
             {layer_join}
-            WHERE content LIKE ?
+            WHERE content LIKE ? AND pmem_path_matches(chunks_fts.path)
             {layer_where}
             LIMIT ?
             """,
@@ -328,6 +394,11 @@ def _fts_search(store: SQLiteGraphStore, query: str, limit: int, layer: str | No
 def _rows_by_chunk_id(store: SQLiteGraphStore, chunk_ids: list[str], layer: str | None = None) -> dict[str, dict[str, object]]:
     if not chunk_ids:
         return {}
+    if len(chunk_ids) > 256:
+        rows = {}
+        for start in range(0, len(chunk_ids), 256):
+            rows.update(_rows_by_chunk_id(store, chunk_ids[start:start + 256], layer))
+        return rows
     placeholders = ",".join("?" for _ in chunk_ids)
     layer_join = "JOIN nodes n ON n.id = chunks_fts.chunk_id" if layer else ""
     layer_where = "AND n.layer = ?" if layer else ""
@@ -346,12 +417,44 @@ def _rows_by_chunk_id(store: SQLiteGraphStore, chunk_ids: list[str], layer: str 
     return {str(row["chunk_id"]): dict(row) for row in rows}
 
 
+def _scoped_vector_hits(vectors, store, query, limit, layer, filters, diagnostics):
+    legacy_filter = {"should": [{"is_empty": {"key": key}} for key in (
+        "memory_scope", "memory_audience", "memory_type", "memory_domain")]}
+    accepted = {}
+    if filters.metadata_stale(store):
+        diagnostics.append("Vector classification metadata is missing or stale; using bounded path-classified candidates. Reindex to refresh semantic filters.")
+        streams = (("legacy/stale", None),)
+    else:
+        streams = (("filtered", filters.payload_filter()), ("legacy", legacy_filter))
+    with vectors.query_session():
+        for label, payload_filter in streams:
+            requested = min(max(limit, 64), 1024)
+            while True:
+                hits = vectors.search(query, requested, query_filter=payload_filter)
+                rows = _rows_by_chunk_id(store, [str(hit["chunk_id"]) for hit in hits], layer=layer)
+                eligible = 0
+                for hit in hits:
+                    row = rows.get(str(hit["chunk_id"]))
+                    if (row and hit.get("payload", {}).get("memory_scope") in (None, "project")
+                            and filters.matches(str(row["path"]))):
+                        eligible += 1
+                        accepted[str(hit["chunk_id"])] = hit
+                if len(hits) < requested or eligible >= limit:
+                    break
+                if requested >= 1024:
+                    diagnostics.append(f"{label.capitalize()} vector candidate cap reached (1024); semantic results may be incomplete for these filters.")
+                    break
+                requested = min(requested * 4, 1024)
+    return sorted(accepted.values(), key=lambda hit: float(hit["score"]), reverse=True)[:limit]
+
+
 def _vector_search(
     root: Path,
     store: SQLiteGraphStore,
     query: str,
     limit: int,
     layer: str | None = None,
+    *, filters: SearchFilter, diagnostics: list[str],
 ) -> list[dict[str, object]]:
     cfg = load_config(root)
     vector_cfg = cfg.get("vector", {})
@@ -368,7 +471,7 @@ def _vector_search(
         root=root,
     )
     try:
-        hits = vectors.search(query, limit)
+        hits = _scoped_vector_hits(vectors, store, query, limit, layer, filters, diagnostics)
     finally:
         vectors.close()
     rows_by_id = _rows_by_chunk_id(store, [str(hit["chunk_id"]) for hit in hits], layer=layer)
@@ -386,19 +489,33 @@ def _vector_search(
     return rows
 
 
-def search(root: Path, query: str, limit: int = 10, layer: str | None = None, debug: bool = False) -> list[dict[str, object]]:
-    ensure_fresh_index(root, "search")
+def search(root: Path, query: str, limit: int = 10, layer: str | None = None, debug: bool = False, *, audience: str = "project", domain: str | None = None, memory_type: str | None = None) -> list[dict[str, object]]:
+    filters = SearchFilter(root, load_config(root), audience, domain, memory_type)
+    diagnostics: list[str] = []
+    try:
+        notice = ensure_fresh_index(root, "search")
+        if notice and notice.startswith('auto-index before search: skipped because '):
+            diagnostics.append(notice)
+    except VectorBackendBusyError:
+        diagnostics.append(SEMANTIC_BUSY)
+        diagnostics.append("Automatic index update could not complete; existing lexical/graph results may be stale.")
+        mark_request_vector_busy(root, SEMANTIC_BUSY)
+    diagnostics.extend(item for item in request_freshness_diagnostics(root) if item not in diagnostics)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
     candidates: list[dict[str, object]] = []
     try:
-        candidates.extend(_vector_search(root, store, query, limit, layer=layer))
+        if not request_vector_busy(root) and SEMANTIC_BUSY not in diagnostics:
+            candidates.extend(_vector_search(root, store, query, limit, layer=layer, filters=filters, diagnostics=diagnostics))
+    except VectorBackendBusyError:
+        diagnostics.append(SEMANTIC_BUSY)
+        mark_request_vector_busy(root, SEMANTIC_BUSY)
     except RuntimeError:
         raise
     except Exception:
         candidates = []
 
-    for row in _fts_search(store, query, limit, layer=layer):
+    for row in _fts_search(store, query, limit, layer=layer, filters=filters):
         candidates.append(row)
         if len(candidates) >= limit * 3:
             break
@@ -406,4 +523,8 @@ def search(root: Path, query: str, limit: int = 10, layer: str | None = None, de
     if not debug:
         for item in results:
             item.pop("sources", None)
-    return results[:limit]
+    for item in results[:limit]:
+        item.update(filters.metadata(str(item["path"])) or {})
+    for notice in diagnostics:
+        note_request_diagnostic(root, notice)
+    return SearchResults(results[:limit], diagnostics=diagnostics)

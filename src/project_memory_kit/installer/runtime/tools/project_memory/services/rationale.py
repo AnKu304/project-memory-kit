@@ -11,6 +11,9 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_text, stable_id
 from tools.project_memory.services.search import search as global_search
+from tools.project_memory.services.memory_relations import (
+    links_from_markdown, load_links, save_links, validate_links, with_links,
+)
 from tools.project_memory.time_utils import utc_now
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
@@ -323,26 +326,8 @@ def _index_entry(
         vectors.close()
 
 
-def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str]) -> None:
-    now = utc_now()
-    with store.connect() as conn:
-        conn.execute("DELETE FROM rationale_links WHERE rationale_id = ?", (entry_id,))
-        for raw in links:
-            value = str(raw).strip()
-            if not value:
-                continue
-            relation, _, target = value.partition(":")
-            if not target:
-                relation, target = "relates_to", relation
-            link_id = stable_id("rationale-link", entry_id, relation, target)
-            conn.execute(
-                """
-                INSERT INTO rationale_links(id, rationale_id, relation, target, properties_json, created_at)
-                VALUES (?, ?, ?, ?, '{}', ?)
-                ON CONFLICT(id) DO UPDATE SET relation=excluded.relation, target=excluded.target
-                """,
-                (link_id, entry_id, relation, target, now),
-            )
+def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str | dict]) -> None:
+    save_links(store, "rationale", entry_id, links)
 
 
 def add_rationale(
@@ -359,7 +344,7 @@ def add_rationale(
     source: str | None = None,
     summary: str | None = None,
     supersedes: str | None = None,
-    links: Iterable[str] | None = None,
+    links: Iterable[str | dict] | None = None,
 ) -> RationaleResult:
     store = _store(root)
     rationale_type = _normalize_type(rationale_type)
@@ -370,6 +355,9 @@ def add_rationale(
         raise ValueError(f"superseded rationale entry not found: {supersedes}")
 
     content = _read_source(root, file_path)
+    link_values = validate_links(store, "rationale", entry_id,
+                                 links if links is not None else links_from_markdown(content),
+                                 owner_path=_entry_path(root, rationale_type, entry_id))
     tag_list = _list(tags)
     rejected_list = _list(rejected)
     evidence_list = _list(evidence)
@@ -393,6 +381,7 @@ def add_rationale(
         rejected_list,
         evidence_list,
     )
+    rendered = with_links(rendered, link_values, "rationale")
     path.write_text(rendered, encoding="utf-8")
     rel = _relative(root, path)
     now = utc_now()
@@ -426,7 +415,7 @@ def add_rationale(
                 now,
             ),
         )
-    _save_links(store, entry_id, links or [])
+    _save_links(store, entry_id, link_values)
     if supersedes:
         retire_rationale(root, supersedes, status=SUPERSEDED)
     _index_entry(
@@ -462,7 +451,7 @@ def update_rationale(
     tags: Iterable[str] | None = None,
     source: str | None = None,
     summary: str | None = None,
-    links: Iterable[str] | None = None,
+    links: Iterable[str | dict] | None = None,
 ) -> RationaleResult:
     store = _store(root)
     entry_id = _slugify(entry_id)
@@ -471,6 +460,10 @@ def update_rationale(
         raise ValueError(f"rationale entry not found: {entry_id}")
 
     content = _read_source(root, file_path)
+    # None preserves existing assertions, including stale evidence revisions.
+    link_values = (load_links(store, "rationale", entry_id) if links is None
+                   else validate_links(store, "rationale", entry_id, links,
+                                       owner_path=_entry_path(root, _normalize_type(rationale_type or row["type"]), entry_id)))
     next_type = _normalize_type(rationale_type or row["type"])
     next_title = title or row["title"]
     next_decision = decision if decision is not None else row["decision"]
@@ -500,6 +493,7 @@ def update_rationale(
         next_rejected,
         next_evidence,
     )
+    rendered = with_links(rendered, link_values, "rationale")
     path.write_text(rendered, encoding="utf-8")
     rel = _relative(root, path)
     if old_path != rel:
@@ -536,7 +530,7 @@ def update_rationale(
             ),
         )
     if links is not None:
-        _save_links(store, entry_id, links)
+        _save_links(store, entry_id, link_values)
     _index_entry(
         root,
         store,

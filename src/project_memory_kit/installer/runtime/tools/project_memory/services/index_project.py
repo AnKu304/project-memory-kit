@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Callable
 
 from tools.project_memory.config import config_path, load_config
-from tools.project_memory.git_diff import changed_files, untracked_files
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
 from tools.project_memory.ignore import iter_indexable_files
@@ -12,6 +12,10 @@ from tools.project_memory.parsers.js_ts import JsTsParser
 from tools.project_memory.parsers.js_ts_imports import JS_TS_EXTENSIONS, language_for_path as js_ts_language_for_path
 from tools.project_memory.parsers.python_ast import PythonAstParser
 from tools.project_memory.parsers.symbol_model import ParseResult, Symbol
+from tools.project_memory.services.memory_scope import (
+    annotate_indexed_path, classify_memory_path, existing_file_with_metadata,
+    indexed_memory_metadata, validate_memory_classification,
+)
 from tools.project_memory.services.next_graph import (
     bind_next_route_components,
     file_properties,
@@ -25,27 +29,8 @@ PYTHON_PARSER = PythonAstParser()
 JS_TS_PARSER = JsTsParser()
 
 
-def _iter_files(root: Path, mode: str, store: SQLiteGraphStore | None = None) -> list[Path]:
-    all_files = iter_indexable_files(root)
-    if mode == "changed":
-        changed = list(dict.fromkeys([*changed_files(root), *untracked_files(root)]))
-        if changed:
-            changed_set = set(changed)
-            candidates = [path for path in all_files if path.relative_to(root).as_posix() in changed_set]
-            if store is not None:
-                known = {path.relative_to(root).as_posix() for path in candidates}
-                candidates.extend(
-                    path
-                    for path in all_files
-                    if path.relative_to(root).as_posix() not in known
-                    and store.file_hash(path.relative_to(root).as_posix()) is None
-                )
-            return candidates
-    return all_files
-
-
-def _cleanup_removed_files(root: Path, store: SQLiteGraphStore) -> int:
-    current_paths = {path.relative_to(root).as_posix() for path in iter_indexable_files(root)}
+def _cleanup_removed_files(root: Path, store: SQLiteGraphStore, files: list[Path]) -> int:
+    current_paths = {path.relative_to(root).as_posix() for path in files}
     removed_paths = store.indexed_file_paths() - current_paths
     for rel in sorted(removed_paths):
         store.clear_removed_file_memory(rel)
@@ -99,6 +84,8 @@ def _index_parse_result(
     route_id: str | None = None,
     route_info: dict[str, object] | None = None,
     component_boundary: str | None = None,
+    metadata: dict[str, str] | None = None,
+    cfg: dict | None = None,
 ) -> list[str]:
     module_id = store.upsert_node(kind="Module", name=result.module, fqn=result.module, path=rel, language=language)
     store.upsert_edge(file_id, module_id, "DEFINES", evidence=rel)
@@ -144,6 +131,7 @@ def _index_parse_result(
                 "end_line": symbol.end_line,
                 "kind": "symbol",
                 "hash": file_hash,
+                **(metadata or {}),
             },
         )
 
@@ -182,12 +170,14 @@ def _index_parse_result(
         if item.target_path:
             target_path = Path(item.target_path)
             edge_source = f"import:{item.kind}:{item.name or '*'}:{item.alias or ''}"
-            target_id = store.upsert_node(
+            target_metadata = classify_memory_path(store.root, target_path, cfg)
+            target_id = existing_file_with_metadata(store, item.target_path, target_metadata) or store.upsert_node(
                 kind="File",
                 name=target_path.name,
                 fqn=item.target_path,
                 path=item.target_path,
                 language=_language_for_path(target_path),
+                properties=target_metadata,
             )
             store.upsert_edge(
                 file_id,
@@ -198,7 +188,6 @@ def _index_parse_result(
                 evidence=item.module,
                 properties={"name": item.name, "alias": item.alias, "import_kind": item.kind, "line": item.line},
             )
-    store.update_file_state(rel, file_hash, parser_name, result.warnings)
     return [f"{rel}: {warning}" for warning in result.warnings]
 
 
@@ -401,6 +390,7 @@ def _index_text_file(
     file_hash: str,
     store: SQLiteGraphStore,
     vectors: QdrantLocalStore,
+    metadata: dict[str, str] | None = None,
 ) -> None:
     content = path.read_text(encoding="utf-8", errors="replace")
     line_count = max(1, len(content.splitlines()))
@@ -419,9 +409,9 @@ def _index_text_file(
             "end_line": line_count,
             "kind": "file",
             "hash": file_hash,
+            **(metadata or {}),
         },
     )
-    store.update_file_state(rel, file_hash, "text", [])
 
 
 def _index_file(
@@ -430,48 +420,62 @@ def _index_file(
     mode: str,
     project_id: str,
     store: SQLiteGraphStore,
-    vectors: QdrantLocalStore,
+    get_vectors: Callable[[], QdrantLocalStore],
+    cfg: dict | None = None,
+    prior_metadata: dict[str, str] | None = None,
+    prior_hash: str | None = None,
 ) -> tuple[bool, bool, list[str]]:
     rel = path.relative_to(root).as_posix()
+    metadata = classify_memory_path(root, path, cfg)
     file_hash = sha256_file(path)
-    if mode == "changed" and store.file_hash(rel) == file_hash:
+    if mode == "changed" and prior_hash == file_hash and prior_metadata == metadata:
         return False, True, []
 
-    store.clear_generated_file_memory(rel)
-    parser, language, parser_name = _parser_for(path)
-    route_info = next_route_info(path, rel)
-    file_props = file_properties(path, rel, route_info)
-    file_id = store.upsert_node(
-        kind="File",
-        name=path.name,
-        fqn=rel,
-        path=rel,
-        language=language,
-        hash=file_hash,
-        properties=file_props,
-    )
-    store.upsert_edge(project_id, file_id, "CONTAINS", evidence=rel)
-    route_id = _index_route_node(store, file_id, rel, language, route_info)
+    vectors = get_vectors()
+    with vectors.batch_fallback():
+        store.clear_generated_file_memory(rel)
+        parser, language, parser_name = _parser_for(path)
+        route_info = next_route_info(path, rel)
+        file_props = file_properties(path, rel, route_info)
+        file_id = store.upsert_node(
+            kind="File",
+            name=path.name,
+            fqn=rel,
+            path=rel,
+            language=language,
+            hash=file_hash,
+            properties=file_props,
+        )
+        store.upsert_edge(project_id, file_id, "CONTAINS", evidence=rel)
+        route_id = _index_route_node(store, file_id, rel, language, route_info)
 
-    if parser is None:
-        _index_text_file(path, rel, file_id, file_hash, store, vectors)
-        return True, False, []
-
-    result = parser.parse(root, path)
-    warnings = _index_parse_result(
-        path,
-        rel,
-        file_id,
-        file_hash,
-        language or "text",
-        parser_name,
-        result,
-        store,
-        vectors,
-        route_id=route_id,
-        route_info=route_info,
-        component_boundary=str(file_props.get("component_boundary")) if file_props.get("component_boundary") else None,
-    )
+        if parser is None:
+            _index_text_file(path, rel, file_id, file_hash, store, vectors, metadata)
+            raw_warnings = []
+            warnings = []
+        else:
+            result = parser.parse(root, path)
+            raw_warnings = result.warnings
+            warnings = _index_parse_result(
+                path,
+                rel,
+                file_id,
+                file_hash,
+                language or "text",
+                parser_name,
+                result,
+                store,
+                vectors,
+                route_id=route_id,
+                route_info=route_info,
+                component_boundary=str(file_props.get("component_boundary")) if file_props.get("component_boundary") else None,
+                metadata=metadata,
+                cfg=cfg,
+            )
+        annotate_indexed_path(store, rel, metadata)
+    # Publish freshness only after this file's vectors are persisted. A failed or
+    # interrupted flush leaves no hash, so changed indexing retries the file.
+    store.update_file_state(rel, file_hash, parser_name, raw_warnings)
     return True, False, warnings
 
 
@@ -499,37 +503,53 @@ def _index_route_node(
 
 def index_project(root: Path, mode: str = "changed") -> str:
     cfg = load_config(root)
+    validate_memory_classification(cfg)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
     vector_cfg = cfg.get("vector", {})
-    vectors = QdrantLocalStore(
-        config_path(root, "qdrant_path"),
-        cfg.get("memory", {}).get("vector_size", 64),
-        backend=vector_cfg.get("backend", "auto"),
-        collection=vector_cfg.get("collection", "project_memory_chunks"),
-        model_name=vector_cfg.get("embedding_model"),
-        url=vector_cfg.get("url"),
-        root=root,
-    )
+    vectors = None
+
+    def get_vectors() -> QdrantLocalStore:
+        nonlocal vectors
+        if vectors is None:
+            vectors = QdrantLocalStore(
+                config_path(root, "qdrant_path"),
+                cfg.get("memory", {}).get("vector_size", 64),
+                backend=vector_cfg.get("backend", "auto"),
+                collection=vector_cfg.get("collection", "project_memory_chunks"),
+                model_name=vector_cfg.get("embedding_model"),
+                url=vector_cfg.get("url"), root=root,
+            )
+        return vectors
 
     try:
-        files = _iter_files(root, mode, store)
+        prior_metadata = indexed_memory_metadata(store)
+        prior_hashes = store.indexed_file_hashes()
+        # Git's working diff is not the index manifest: pulled/committed changes
+        # can coexist with unrelated dirty files. Check all allowed source hashes,
+        # but only parse/embed changed files, and never open vectors for a no-op.
+        files = iter_indexable_files(root)
         indexed = 0
         skipped = 0
         warnings: list[str] = []
-        removed = _cleanup_removed_files(root, store)
+        removed = _cleanup_removed_files(root, store, files)
 
         project_id = store.upsert_node(kind="Project", name=root.name, fqn=root.name, path=".")
 
         for path in files:
-            did_index, did_skip, file_warnings = _index_file(root, path, mode, project_id, store, vectors)
+            rel = path.relative_to(root).as_posix()
+            did_index, did_skip, file_warnings = _index_file(
+                root, path, mode, project_id, store, get_vectors, cfg,
+                prior_metadata.get(rel), prior_hashes.get(rel),
+            )
             if did_skip:
                 skipped += 1
             if did_index:
                 indexed += 1
             warnings.extend(file_warnings)
     finally:
-        vectors.close()
+        if vectors is not None:
+            vectors.close()
 
     summary = [f"indexed={indexed}", f"skipped={skipped}", f"removed={removed}", f"mode={mode}"]
     bound = _bind_cross_file_symbols(store)

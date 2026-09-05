@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.project_memory.config import config_path
-from tools.project_memory.git_diff import changed_files, untracked_files
+from tools.project_memory.git_diff import changed_files, untracked_files, git_available, git_limitation
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.services.status import project_status
 from tools.project_memory.services.tasks import list_tasks
@@ -43,6 +43,8 @@ def local_evidence(root: Path, base: str = "HEAD") -> dict[str, Any]:
     active_tasks = list_tasks(root, include_closed=False)
     return {
         "base": base,
+        "git_available": git_available(root),
+        "diagnostics": [git_limitation(root)] if not git_available(root) else [],
         "changed_files": changed_files(root, base),
         "untracked_files": untracked_files(root),
         "index": status["index"],
@@ -57,13 +59,14 @@ def format_local_evidence(report: dict[str, Any]) -> str:
     lines = [
         "Local Evidence",
         f"- base: {report['base']}",
-        f"- changed_files: {len(report['changed_files'])}",
-        f"- untracked_files: {len(report['untracked_files'])}",
+        f"- changed_files: {len(report['changed_files']) if report.get('git_available', True) else 'unavailable'}",
+        f"- untracked_files: {len(report['untracked_files']) if report.get('git_available', True) else 'unavailable'}",
         f"- index: fresh={index['fresh']} missing={index['missing']} stale={index['stale']}",
         f"- active_tasks: {len(report['active_tasks'])}",
         f"- tests: {len(report['tests'])}",
         f"- recent_failures: {len(report['failures'])}",
     ]
+    lines.extend(f"- Warning: {item}" for item in report.get("diagnostics", []))
     if report["changed_files"]:
         lines.append("- changed sample:")
         lines.extend(f"  - {path}" for path in report["changed_files"][:8])

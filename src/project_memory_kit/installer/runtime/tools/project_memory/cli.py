@@ -28,41 +28,20 @@ from tools.project_memory.services.human import (
 from tools.project_memory.services.impact_analysis import analyze_impact, format_impact
 from tools.project_memory.services.index_project import index_project
 from tools.project_memory.services.init_memory import init_memory
-from tools.project_memory.services.knowledge import (
-    add_knowledge,
-    build_knowledge_context,
-    knowledge_conflict_count,
-    retire_knowledge,
-    search_knowledge,
-    show_knowledge,
-    update_knowledge,
-    write_knowledge_context,
-)
 from tools.project_memory.services.migrations import apply_migrations
 from tools.project_memory.services.maintenance import format_optimization, optimize_project
 from tools.project_memory.services.memory_report import build_memory_report, format_memory_report
 from tools.project_memory.services.mcp_config import build_mcp_config, format_mcp_config, write_mcp_config
 from tools.project_memory.mcp import serve_stdio
+from tools.project_memory.memory_cli import add_memory_parsers, prepare_memory_arguments
 from tools.project_memory.parser_sections import (
     add_concurrency_parsers,
     add_human_parser,
-    add_knowledge_parser,
     add_modules_parser,
-    add_rationale_parser,
     add_tasks_parser,
 )
 from tools.project_memory.services.concurrency import command_lock, command_queue, run_with_write_lock
 from tools.project_memory.services.modules import format_module_states, set_module_enabled
-from tools.project_memory.services.rationale import (
-    add_rationale,
-    build_rationale_context,
-    rationale_conflict_count,
-    retire_rationale,
-    search_rationale,
-    show_rationale,
-    update_rationale,
-    write_rationale_context,
-)
 from tools.project_memory.services.search import format_search_result, search as search_service
 from tools.project_memory.services.status import format_stale, format_status, project_status
 from tools.project_memory.services.tasks import close_task, format_tasks, list_tasks
@@ -98,6 +77,7 @@ def command_status(args: argparse.Namespace) -> int:
     return 0
 
 
+
 def command_index(args: argparse.Namespace) -> int:
     print(index_project(root(), mode=args.mode))
     return 0
@@ -123,7 +103,10 @@ def command_tests(args: argparse.Namespace) -> int:
     if args.explain:
         print(explain_tests(root(), args.base), end="")
         return 0
-    for command in select_tests(root(), args.base):
+    commands = select_tests(root(), args.base)
+    for diagnostic in getattr(commands, "diagnostics", []):
+        print(f"Warning: {diagnostic}")
+    for command in commands:
         print(command)
     return 0
 
@@ -138,7 +121,12 @@ def command_record_failure(args: argparse.Namespace) -> int:
 
 
 def command_search(args: argparse.Namespace) -> int:
-    for item in search_service(root(), args.query, args.limit, layer=args.layer, debug=args.debug):
+    rows = search_service(root(), args.query, args.limit, layer=args.layer, debug=args.debug,
+                          audience=getattr(args, "audience", "project"), domain=getattr(args, "domain", None),
+                          memory_type=getattr(args, "memory_type", None))
+    for diagnostic in getattr(rows, "diagnostics", []):
+        print(f"Warning: {diagnostic}")
+    for item in rows:
         print(format_search_result(item, debug=args.debug))
     return 0
 
@@ -199,144 +187,6 @@ def command_watch(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print("watch serve: stopped")
     return 0
-
-
-def command_knowledge(args: argparse.Namespace) -> int:
-    try:
-        if args.knowledge_command == "add":
-            result = add_knowledge(
-                root(),
-                item_type=args.type,
-                title=args.title,
-                file_path=args.file,
-                entry_id=args.id,
-                tags=args.tags or [],
-                source=args.source,
-                summary=args.summary,
-                supersedes=args.supersedes,
-                links=args.link or [],
-            )
-            print(f"knowledge added: {result.id} v{result.version} {result.path}")
-            return 0
-        if args.knowledge_command == "update":
-            result = update_knowledge(
-                root(),
-                entry_id=args.id,
-                file_path=args.file,
-                title=args.title,
-                item_type=args.type,
-                tags=args.tags,
-                source=args.source,
-                summary=args.summary,
-                links=args.link,
-            )
-            print(f"knowledge updated: {result.id} v{result.version} {result.path}")
-            return 0
-        if args.knowledge_command == "search":
-            for item in search_knowledge(root(), args.query, args.limit, include_archived=args.include_archived):
-                print(
-                    f"[{item['type']}] {item['title']} v{item['version']} "
-                    f"{item['knowledge_id']} {item['path']}: {item['snippet']}"
-                )
-            return 0
-        if args.knowledge_command == "context":
-            if args.out:
-                out = Path(args.out)
-                if not out.is_absolute():
-                    out = root() / out
-                print(write_knowledge_context(root(), args.task, out, args.limit))
-            else:
-                print(build_knowledge_context(root(), args.task, args.limit), end="")
-            return 0
-        if args.knowledge_command == "show":
-            print(show_knowledge(root(), args.id), end="")
-            return 0
-        if args.knowledge_command == "retire":
-            result = retire_knowledge(root(), args.id, status=args.status)
-            print(f"knowledge {result.status}: {result.id} v{result.version} {result.path}")
-            return 0
-        if args.knowledge_command == "conflicts":
-            print(f"knowledge conflicts: {knowledge_conflict_count(root())}")
-            return 0
-    except (FileNotFoundError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    print("missing knowledge command", file=sys.stderr)
-    return 2
-
-
-def command_rationale(args: argparse.Namespace) -> int:
-    try:
-        if args.rationale_command == "add":
-            result = add_rationale(
-                root(),
-                rationale_type=args.type,
-                title=args.title,
-                file_path=args.file,
-                entry_id=args.id,
-                decision=args.decision,
-                why=args.why,
-                rejected=args.rejected or [],
-                evidence=args.evidence or [],
-                tags=args.tags or [],
-                source=args.source,
-                summary=args.summary,
-                supersedes=args.supersedes,
-                links=args.link or [],
-            )
-            print(f"rationale added: {result.id} v{result.version} {result.path}")
-            return 0
-        if args.rationale_command == "update":
-            result = update_rationale(
-                root(),
-                entry_id=args.id,
-                file_path=args.file,
-                title=args.title,
-                rationale_type=args.type,
-                decision=args.decision,
-                why=args.why,
-                rejected=args.rejected,
-                evidence=args.evidence,
-                tags=args.tags,
-                source=args.source,
-                summary=args.summary,
-                links=args.link,
-            )
-            print(f"rationale updated: {result.id} v{result.version} {result.path}")
-            return 0
-        if args.rationale_command == "search":
-            for item in search_rationale(root(), args.query, args.limit, include_archived=args.include_archived):
-                print(
-                    f"[{item['type']}] {item['title']} v{item['version']} "
-                    f"{item['rationale_id']} {item['path']} "
-                    f"[{item.get('source', 'local')} {float(item.get('score') or 0.0):.2f}]: "
-                    f"{item['snippet']}"
-                )
-            return 0
-        if args.rationale_command == "context":
-            if args.out:
-                out = Path(args.out)
-                if not out.is_absolute():
-                    out = root() / out
-                print(write_rationale_context(root(), args.task, out, args.limit))
-            else:
-                print(build_rationale_context(root(), args.task, args.limit), end="")
-            return 0
-        if args.rationale_command == "show":
-            print(show_rationale(root(), args.id), end="")
-            return 0
-        if args.rationale_command == "retire":
-            result = retire_rationale(root(), args.id, status=args.status)
-            print(f"rationale {result.status}: {result.id} v{result.version} {result.path}")
-            return 0
-        if args.rationale_command == "conflicts":
-            print(f"rationale conflicts: {rationale_conflict_count(root())}")
-            return 0
-    except (FileNotFoundError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    print("missing rationale command", file=sys.stderr)
-    return 2
 
 
 def command_migrate(_: argparse.Namespace) -> int:
@@ -478,6 +328,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--format", choices=["markdown", "json"], default="markdown")
     p.set_defaults(func=command_status)
 
+    add_memory_parsers(sub, lambda: root())
+
     p = sub.add_parser("index")
     p.add_argument("--mode", choices=["full", "changed"], default="changed")
     p.set_defaults(func=command_index)
@@ -509,6 +361,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--query", required=True)
     p.add_argument("--limit", type=int, default=10)
     p.add_argument("--layer", choices=["knowledge", "rationale", "human"], default=None)
+    p.add_argument("--audience", choices=["project", "agent_tooling", "all"], default="project")
+    p.add_argument("--domain", default=None)
+    p.add_argument("--type", dest="memory_type", choices=["code", "knowledge", "rationale", "agent_tooling", "document"], default=None)
     p.add_argument("--debug", action="store_true")
     p.set_defaults(func=command_search)
 
@@ -542,9 +397,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--interval", type=float, default=5.0)
     p.add_argument("--max-runs", type=int)
     p.set_defaults(func=command_watch)
-
-    add_knowledge_parser(sub, command_knowledge)
-    add_rationale_parser(sub, command_rationale)
 
     p = sub.add_parser("migrate")
     p.set_defaults(func=command_migrate)
@@ -584,6 +436,11 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     args = parser.parse_args(argv)
+    try:
+        prepare_memory_arguments(root(), args)
+    except (ValueError, OSError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     return run_with_write_lock(root(), args, argv, lambda: int(args.func(args)))
 
 

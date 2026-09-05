@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from tools.project_memory.config import load_config
-from tools.project_memory.ignore import is_binary, iter_project_files
+from tools.project_memory.git_diff import non_git_container
+from tools.project_memory.ignore import is_binary, iter_project_files, is_sensitive_path
 
 
 DEPENDENCY_DIRS = {
@@ -123,10 +124,18 @@ def scan_secrets(root: Path, max_findings: int | None = None) -> list[SecretFind
     allowlist = [str(item) for item in secret_cfg.get("allowlist", []) if item]
     allowlist.extend(item for item in _config_allowlist(root) if item not in allowlist)
     findings: list[SecretFinding] = []
+    container = non_git_container(root)
 
     for path in sorted(iter_project_files(root, ignore_file_patterns=False)):
         if len(findings) >= limit:
             break
+        if container and is_sensitive_path(root, path):
+            rel = path.relative_to(root).as_posix()
+            finding = SecretFinding(path=rel, line=0, rule="excluded_sensitive_path",
+                                    fingerprint=_fingerprint("excluded_sensitive_path", rel, 0, rel))
+            if not _allowed(finding, allowlist):
+                findings.append(finding)
+            continue
         if not _should_scan(root, path):
             continue
         try:

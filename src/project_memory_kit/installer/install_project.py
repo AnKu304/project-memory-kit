@@ -28,9 +28,13 @@ AGENT_PROFILES = {"codex", "claude", "multiagent"}
 @dataclass
 class ProjectInstallResult:
     report: InstallReport
+    completed: bool = True
 
     def summary(self) -> str:
-        return self.report.summary()
+        summary = self.report.summary()
+        if not self.completed:
+            return summary.replace("project-memory-kit installed in ", "project-memory-kit installation incomplete in ", 1)
+        return summary
 
 
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -50,6 +54,45 @@ def _ensure_git_repo(root: Path, report: InstallReport) -> None:
     else:
         report.commands.append(f"git init failed: {result.stderr.strip()}")
 
+
+
+def _installation_mode(root: Path, no_git_init: bool) -> str:
+    metadata = root / ".project-memory" / "install.json"
+    if metadata.is_symlink() or metadata.parent.is_symlink():
+        raise ValueError("Install metadata paths must not be symlinks")
+    previous = None
+    if metadata.exists():
+        try:
+            data = json.loads(metadata.read_text(encoding="utf-8"))
+            previous = data.get("installation_mode", "repository")
+        except (ValueError, AttributeError):
+            raise ValueError("Invalid install metadata; preserve it and reconcile installation mode explicitly") from None
+        if previous not in {"repository", "non_git_container"}:
+            raise ValueError("Unknown installation mode; existing installation preserved")
+    if no_git_init and previous == "repository":
+        raise ValueError("Existing repository installation cannot be converted into a container implicitly")
+    mode = previous or ("non_git_container" if no_git_init else "repository")
+    if mode == "non_git_container":
+        for parent in (root, *root.parents):
+            if (parent / ".git").exists() or (parent / ".git").is_symlink():
+                raise ValueError("Non-Git container must remain outside every Git repository")
+    return mode
+
+
+def _container_ignores(root: Path, report: InstallReport) -> None:
+    path = root / ".project-memoryignore"
+    if path.is_symlink():
+        raise ValueError("Container ignore file must not be a symlink")
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    patterns = ["agent/", "archive/", ".codex/", "*.sqlite", "*.sqlite-*", "*.sqlite3", "*.db", "*.db-*"]
+    missing = [pattern for pattern in patterns if pattern not in existing.splitlines()]
+    if not missing:
+        return
+    addition = ("" if not existing or existing.endswith("\n") else "\n")
+    addition += "# PMEM non-Git container: private operations, archives, settings and databases\n"
+    addition += "\n".join(missing) + "\n"
+    path.write_text(existing + addition, encoding="utf-8")
+    report.add_path("updated" if existing else "created", path)
 
 def _write_wrappers(root: Path, report: InstallReport) -> None:
     bash = """#!/usr/bin/env bash
@@ -79,7 +122,7 @@ exit $LASTEXITCODE
     write_text_file(root / "pmem.ps1", ps1, report)
 
 
-def _run_runtime(root: Path, report: InstallReport, args: list[str]) -> None:
+def _run_runtime(root: Path, report: InstallReport, args: list[str]) -> bool:
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     result = subprocess.run(
@@ -96,6 +139,7 @@ def _run_runtime(root: Path, report: InstallReport, args: list[str]) -> None:
     else:
         stderr = result.stderr.strip() or result.stdout.strip()
         report.commands.append(f"{command} failed: {stderr}")
+    return result.returncode == 0
 
 
 def _read_install_metadata(root: Path) -> dict[str, object]:
@@ -254,13 +298,14 @@ def _detect_installed_agent_profiles(root: Path, active_profile: str) -> list[st
     return [item for item in ["codex", "claude", "multiagent"] if item in profiles]
 
 
-def _write_install_metadata(root: Path, report: InstallReport, operation: str, agent_profile: str) -> None:
+def _write_install_metadata(root: Path, report: InstallReport, operation: str, agent_profile: str, installation_mode: str = "repository", installation_pending: bool = False) -> None:
     path = root / ".project-memory" / "install.json"
     previous = _read_install_metadata(root)
     now = _utc_now()
     installed_profiles = _detect_installed_agent_profiles(root, agent_profile)
     data = {
         "package": "project-memory-kit",
+        "installation_mode": installation_mode,
         "installed_version": __version__,
         "runtime_version": __version__,
         "agent_profile": agent_profile,
@@ -298,6 +343,8 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str, a
             ".project-memory/tmp/",
         ],
     }
+    if installation_mode == "non_git_container":
+        data["installation_pending"] = installation_pending
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -377,13 +424,29 @@ def install_project(
     run_index: bool = False,
     upgrade: bool = False,
     with_vector: bool = False,
+    no_git_init: bool = False,
 ) -> ProjectInstallResult:
     root = target.resolve()
+    installation_mode = _installation_mode(root, no_git_init)
+    if installation_mode == "non_git_container":
+        for relative in (".project-memory", ".project-memory/install.json", ".project-memoryignore"):
+            if (root / relative).is_symlink():
+                raise ValueError("Container managed memory paths must not be symlinks")
     root.mkdir(parents=True, exist_ok=True)
     report = InstallReport(target=root)
     agent_profile = _normalize_agent_profile(root, agent, upgrade=upgrade)
 
-    _ensure_git_repo(root, report)
+    if installation_mode == "repository":
+        _ensure_git_repo(root, report)
+    else:
+        report.commands.append("non-Git container; git init disabled")
+        # Persist intent before copying runtime: interrupted installs must not later create Git.
+        intent = root / ".project-memory" / "install.json"
+        pending_metadata = _read_install_metadata(root)
+        pending_metadata.update(package="project-memory-kit", installation_mode=installation_mode, installation_pending=True)
+        intent.parent.mkdir(parents=True, exist_ok=True)
+        intent.write_text(json.dumps(pending_metadata) + "\n", encoding="utf-8")
+        _container_ignores(root, report)
 
     project_memory = root / ".project-memory"
     project_memory.mkdir(parents=True, exist_ok=True)
@@ -408,16 +471,20 @@ def install_project(
     if with_vector:
         _setup_vector_runtime(root, report)
     _write_wrappers(root, report)
-    _write_install_metadata(root, report, "upgrade" if upgrade else "install", agent_profile)
+    _write_install_metadata(root, report, "upgrade" if upgrade else "install", agent_profile, installation_mode, installation_pending=installation_mode == "non_git_container")
 
-    _run_runtime(root, report, ["init"])
-    _run_runtime(root, report, ["migrate"])
-    _run_runtime(root, report, ["doctor"])
-    if run_index:
+    required_results = [_run_runtime(root, report, [command]) for command in ("init", "migrate", "doctor")]
+    completed = True
+    if installation_mode == "non_git_container":
+        completed = all(required_results)
+        metadata = _read_install_metadata(root)
+        metadata["installation_pending"] = not completed
+        (root / ".project-memory/install.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    if run_index and completed:
         _run_runtime(root, report, ["index", "--mode", "full"])
 
     report.commands.append(f"version={__version__} agent={agent_profile} profile={profile} runtime={runtime}")
-    return ProjectInstallResult(report)
+    return ProjectInstallResult(report, completed=completed)
 
 
 def uninstall_project(target: Path, purge: bool = False, keep_memory: bool = True) -> ProjectInstallResult:

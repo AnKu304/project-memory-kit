@@ -25,3 +25,4 @@ venv/
 .project-memory/models/
 .project-memory/tmp/
 # PMEM:END
+/.agent-foundation/
