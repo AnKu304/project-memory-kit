@@ -324,6 +324,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.23.1`: shared writer lock for native MCP indexing; busy returns an error without mutation or automatic queueing. Restart MCP processes after upgrade.
 - `0.23.0`: isolated containers, sourced relations, MCP writes and resource optimizations.
 - `0.22.2`: Pruned Traversal Fix; status/index/context/audit skip ignored heavy directories before descent.
 - `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.

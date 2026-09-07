@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.23.1
+
+- Native MCP indexing now uses the same project write lock as CLI and auto-indexing.
+- A busy native index returns an error before mutation and does not enqueue a retry.
+- Regression coverage reproduces update/delete interleavings that could invalidate
+  another writer's graph endpoints, and verifies lock release on failure.
+
+Upgrade existing installations and restart their long-lived MCP processes before
+resuming concurrent work. If an earlier interrupted index left graph completeness
+unknown, use one coordinated full index of the already authorized source scope;
+do not delete the database or durable knowledge/rationale. Manifest freshness alone
+does not certify completion of all graph-binding phases.
+
 ## 0.23.0
 
 - Explicit non-Git project containers with preserved upgrade mode and confined source discovery.

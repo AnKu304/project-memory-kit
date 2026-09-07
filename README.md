@@ -340,6 +340,7 @@ MCP умеет создавать, назначать и закрывать за
 
 Кратко:
 
+- `0.23.1`: общая блокировка для индексации через MCP; при занятости — ошибка без записи и автоматической очереди. После upgrade перезапустите MCP-процессы.
 - `0.23.0`: изолированные контейнеры, связи с источниками, запись через MCP и оптимизация ресурсов.
 - `0.22.2`: Pruned Traversal Fix; status/index/context/audit skip ignored heavy directories before descent.
 - `0.22.1`: Contention Fix; `watch --serve` no longer holds write-lock, auto-index skips when busy, embedded Qdrant is guarded with fast fallback.

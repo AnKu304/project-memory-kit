@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TextIO
 
+from tools.project_memory.services.concurrency import MemoryWriteLock
 from tools.project_memory.services.context_builder import build_context
 from tools.project_memory.services.doctor import doctor as doctor_service
 from tools.project_memory.services.eval_runner import format_eval, run_eval
@@ -86,7 +87,8 @@ def _tool_index(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     mode = str(args.get("mode") or "changed")
     if mode not in {"changed", "full"}:
         return _text_result("mode must be `changed` or `full`.", {"mode": mode}, is_error=True)
-    report = index_project(root, mode=mode)
+    with MemoryWriteLock(root, "index", timeout_seconds=0):
+        report = index_project(root, mode=mode)
     return _text_result(report, {"mode": mode, "report": report})
 
 
