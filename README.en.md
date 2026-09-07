@@ -49,6 +49,45 @@ Git impact; empty change lists are not evidence of safety.
 
 ## MCP reads and writes
 
+### Claude Code and Kimi Code
+
+From the **exact existing memory root** (the container if code lives in nested Git):
+
+```bash
+./pmem mcp-config --client claude --write
+./pmem mcp-config --client kimi --write
+```
+
+These add `project_memory` to `.mcp.json` and `.kimi-code/mcp.json`. Both clients
+use the same wrapper/database, without indexing or model calls. Other servers
+are preserved; conflicting `project_memory`, malformed JSON and symlinks are
+rejected without replacement. Without `--write`, these clients emit JSON;
+Codex/generic emit TOML. MCP configs and `.kimi-code/` are excluded from indexing
+as potentially private material.
+
+Launch the CLI from this exact root: Kimi resolves its project config against
+the working directory. It reads `AGENTS.md` and `.agents/skills/`; do not paste
+the whole memory into prompts. Claude reads `CLAUDE.md`: add the `claude` profile
+with a normal upgrade after reviewing local changes, or explicitly reference
+the shared `AGENTS.md` and PMEM skill in an existing `CLAUDE.md`, preserving
+user instructions. Keep these files in the container, outside product Git.
+
+Start a new session, approve workspace trust normally, then inspect `/mcp` in
+each client. Verify `pmem_doctor` (exact root/database), `pmem_context` for a
+small real task, and show a known record. A write is complete only after
+`saved`, `completed: true`, ID and show/search verification. Local storage does
+not prevent the selected context from being sent to the model provider.
+
+CLI authentication, subscription/quota and permissions are separate checks.
+These commands do not log in, access Keychain, enable API billing or bypass
+trust/approval. Under a no-Keychain policy, do not launch unverified Claude
+OAuth. Configuration alone does not establish live client readiness. Delegation
+still requires budget/model selection and independent result verification.
+
+Formats: [Claude MCP](https://code.claude.com/docs/en/mcp),
+[Kimi MCP](https://www.kimi.com/code/docs/en/kimi-code-cli/customization/mcp.html).
+Kimi here is `@moonshot-ai/kimi-code` (`.kimi-code`), not the separate Python `kimi-cli`.
+
 The installed `./pmem mcp-config --root "/exact/root" --format json` emits configuration.
 One MCP serves one root. A configuration file does not prove the client has
 loaded the server: verify `tools/list` and actual operations.
@@ -324,6 +363,7 @@ MCP Task Write Tools can create, assign, and close tasks under `.agents/tasks/`:
 
 Short version:
 
+- `0.23.2`: project-local Claude/Kimi MCP configs, safe config preservation and private config indexing exclusions.
 - `0.23.1`: shared writer lock for native MCP indexing; busy returns an error without mutation or automatic queueing. Restart MCP processes after upgrade.
 - `0.23.0`: isolated containers, sourced relations, MCP writes and resource optimizations.
 - `0.22.2`: Pruned Traversal Fix; status/index/context/audit skip ignored heavy directories before descent.

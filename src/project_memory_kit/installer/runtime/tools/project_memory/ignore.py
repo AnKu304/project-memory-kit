@@ -9,6 +9,8 @@ from tools.project_memory.config import load_config
 from tools.project_memory.git_diff import non_git_container
 
 SECRET_PATTERNS = [
+    ".mcp.json",
+    ".claude.json",
     "*.env",
     ".env",
     ".env.*",
@@ -18,7 +20,7 @@ SECRET_PATTERNS = [
     "*credential*",
     "*token*",
 ]
-PRUNE_DIR_NAMES = {".git", ".project-memory", "__pycache__", "node_modules", ".venv", "venv"}
+PRUNE_DIR_NAMES = {".git", ".project-memory", ".kimi-code", "__pycache__", "node_modules", ".venv", "venv"}
 CONTAINER_EXCLUDES = {"agent", "archive", "archives", "raw", "backup", "backups", "logs", "screenshots", ".codex"}
 DATABASE_PATTERNS = ("*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*", "*.db", "*.db-*")
 

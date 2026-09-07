@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.2
+
+- Added project-local Kimi Code MCP configuration alongside Claude Code, sharing the existing PMEM root/database.
+- JSON clients default to JSON output. Config writes preserve other servers, reject malformed/duplicate-key JSON, conflicting PMEM entries and symlinks; identical connections are a no-op.
+- Exclude MCP configuration and Kimi state from indexing. No authentication, trust, model call, new memory or watcher is enabled by configuration.
+- Added real stdio configuration tests and container-oriented client onboarding in both READMEs. Native authenticated client acceptance remains separate.
+
 ## 0.23.1
 
 - Native MCP indexing now uses the same project write lock as CLI and auto-indexing.

@@ -410,8 +410,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("mcp-config")
     p.add_argument("--root", default=".")
-    p.add_argument("--client", choices=["generic", "claude", "codex"], default="generic")
-    p.add_argument("--format", choices=["toml", "json"], default="toml")
+    p.add_argument("--client", choices=["generic", "claude", "kimi", "codex"], default="generic")
+    p.add_argument("--format", choices=["auto", "toml", "json"], default="auto")
     p.add_argument("--write", action="store_true")
     p.set_defaults(func=command_mcp_config)
 
