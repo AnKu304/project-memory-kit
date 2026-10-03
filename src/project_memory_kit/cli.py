@@ -27,6 +27,9 @@ def _target(value: str | Path | None) -> Path:
 
 
 def _run_runtime(root: Path, command: str, args: Iterable[str] = ()) -> subprocess.CompletedProcess[str]:
+    from project_memory_kit.installer.shared_runtime import shared_binding
+    if shared_binding(root):
+        return subprocess.run([str(root / "pmem"), command, *args], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     runtime_cli = root / "tools" / "project_memory" / "cli.py"
     if not runtime_cli.exists():
         return subprocess.CompletedProcess([command, *args], 2, "", "Project memory runtime is not installed here.")
@@ -134,6 +137,7 @@ def init_command(
     interactive: bool = False,
     input_func: Callable[[str], str] = input,
     no_git_init: bool = False,
+    shared_runtime: str | None = None,
 ) -> None:
     choices: WizardChoices | None = None
     if interactive:
@@ -149,6 +153,7 @@ def init_command(
         run_index=index,
         with_vector=with_vector,
         no_git_init=no_git_init,
+        shared_runtime=Path(shared_runtime) if shared_runtime else None,
     )
     if not result.completed:
         print(result.summary())
@@ -167,6 +172,7 @@ def install_command(
     with_vector: bool = False,
     interactive: bool = False,
     no_git_init: bool = False,
+    shared_runtime: str | None = None,
 ) -> None:
     init_command(
         target=target,
@@ -177,6 +183,7 @@ def install_command(
         with_vector=with_vector,
         interactive=interactive,
         no_git_init=no_git_init,
+        shared_runtime=shared_runtime,
     )
 
 
@@ -203,6 +210,12 @@ def uninstall_command(target: str = ".", purge: bool = False, keep_memory: bool 
 if typer is not None:
     app = typer.Typer(help="Install and run local Dependency Graph RAG project memory.")
 
+    @app.command("runtime", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+    def runtime_typer(ctx: typer.Context) -> None:
+        """Install a shared runtime or bind one explicitly selected project."""
+        from project_memory_kit.installer.shared_runtime import runtime_command
+        raise SystemExit(runtime_command(ctx.args))
+
     @app.command("init")
     def init_typer(
         target: str | None = typer.Option(None, "--target", help="Explicit project root; required with --no-git-init."),
@@ -213,6 +226,7 @@ if typer is not None:
         with_vector: bool = typer.Option(False, "--with-vector", help="Create a managed runtime venv with Qdrant/FastEmbed."),
         interactive: bool = typer.Option(False, "--interactive", help="Ask for profile and optional features."),
         no_git_init: bool = typer.Option(False, "--no-git-init", help="Install in a non-Git container and preserve this mode on upgrade."),
+        shared_runtime: str | None = typer.Option(None, "--shared-runtime", help="Existing shared installation; keep only project data locally."),
     ) -> None:
         if no_git_init and target is None:
             raise typer.BadParameter("--no-git-init requires an explicit --target")
@@ -225,6 +239,7 @@ if typer is not None:
             with_vector=with_vector,
             interactive=interactive,
             no_git_init=no_git_init,
+            shared_runtime=shared_runtime,
         )
 
     @app.command("install")
@@ -237,6 +252,7 @@ if typer is not None:
         with_vector: bool = typer.Option(False, "--with-vector", help="Create a managed runtime venv with Qdrant/FastEmbed."),
         interactive: bool = typer.Option(False, "--interactive", help="Ask for profile and optional features."),
         no_git_init: bool = typer.Option(False, "--no-git-init", help="Install in a non-Git container and preserve this mode on upgrade."),
+        shared_runtime: str | None = typer.Option(None, "--shared-runtime", help="Existing shared installation; keep only project data locally."),
     ) -> None:
         if no_git_init and target is None:
             raise typer.BadParameter("--no-git-init requires an explicit --target")
@@ -249,6 +265,7 @@ if typer is not None:
             with_vector=with_vector,
             interactive=interactive,
             no_git_init=no_git_init,
+            shared_runtime=shared_runtime,
         )
 
     @app.command("upgrade")
@@ -296,6 +313,8 @@ if typer is not None:
         "knowledge",
         "rationale",
         "migrate",
+        "code",
+        "migrate-code",
         "modules",
         "mcp",
         "mcp-config",
@@ -308,6 +327,9 @@ if typer is not None:
 
 
 def _argparse_main(argv: list[str]) -> int:
+    if argv[:1] == ["runtime"]:
+        from project_memory_kit.installer.shared_runtime import runtime_command
+        return runtime_command(argv[1:])
     parser = argparse.ArgumentParser(prog="pmem")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -321,6 +343,7 @@ def _argparse_main(argv: list[str]) -> int:
         p.add_argument("--with-vector", action="store_true")
         p.add_argument("--interactive", action="store_true")
         p.add_argument("--no-git-init", action="store_true")
+        p.add_argument("--shared-runtime")
 
     p = sub.add_parser("upgrade")
     p.add_argument("--target", default=".")
@@ -333,6 +356,7 @@ def _argparse_main(argv: list[str]) -> int:
     p.add_argument("--keep-memory", action="store_true", default=True)
 
     sub.add_parser("version")
+    sub.add_parser("runtime", help="Install a shared runtime or bind an exact project root")
 
     for name in [
         "doctor",
@@ -352,6 +376,8 @@ def _argparse_main(argv: list[str]) -> int:
         "knowledge",
         "rationale",
         "migrate",
+        "code",
+        "migrate-code",
         "modules",
         "mcp",
         "mcp-config",
@@ -365,7 +391,7 @@ def _argparse_main(argv: list[str]) -> int:
     if ns.command in {"init", "install"}:
         if ns.no_git_init and ns.target is None:
             parser.error("--no-git-init requires an explicit --target")
-        init_command(ns.target or ".", ns.agent, ns.profile, ns.runtime, ns.index, ns.with_vector, ns.interactive, no_git_init=ns.no_git_init)
+        init_command(ns.target or ".", ns.agent, ns.profile, ns.runtime, ns.index, ns.with_vector, ns.interactive, no_git_init=ns.no_git_init, shared_runtime=ns.shared_runtime)
         return 0
     if ns.command == "upgrade":
         upgrade_command(ns.target, ns.agent, ns.with_vector)
@@ -380,6 +406,9 @@ def _argparse_main(argv: list[str]) -> int:
 
 
 def main() -> None:
+    if sys.argv[1:2] == ["runtime"]:
+        from project_memory_kit.installer.shared_runtime import runtime_command
+        raise SystemExit(runtime_command(sys.argv[2:]))
     if typer is not None:
         app()
     else:

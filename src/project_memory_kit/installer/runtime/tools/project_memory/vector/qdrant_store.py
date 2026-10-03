@@ -32,11 +32,13 @@ def _is_local_busy(error: Exception) -> bool:
 
 def _normalize_backend(backend: str | None) -> str:
     value = (backend or "auto").lower()
-    return value if value in {"auto", "qdrant", "fallback"} else "auto"
+    return value if value in {"auto", "qdrant", "fallback", "none"} else "auto"
 
 
 def vector_backend_status(backend: str | None = "auto", url: str | None = None) -> str:
     backend = _normalize_backend(backend)
+    if backend == "none":
+        return "disabled (SQLite FTS only)"
     if backend == "fallback":
         return "deterministic fallback (configured)"
     missing: list[str] = []
@@ -65,10 +67,12 @@ class QdrantLocalStore:
         model_name: str | None = None,
         url: str | None = None,
         root: Path | None = None,
+        load_embeddings: bool = True,
     ):
         backend = _normalize_backend(backend)
         self.path = path
-        self.path.mkdir(parents=True, exist_ok=True)
+        if backend != 'none':
+            self.path.mkdir(parents=True, exist_ok=True)
         self.fallback_file = self.path / "fallback_chunks.jsonl"
         self.collection = collection
         self.vector_size = vector_size
@@ -85,6 +89,9 @@ class QdrantLocalStore:
         self._fallback_batch_limit = 0
         self._fallback_pending: dict[str, str] = {}
         self._fallback_pending_bytes = 0
+        if backend == 'none':
+            self.backend = 'none'
+            return
         if backend != "fallback":
             try:
                 from qdrant_client import QdrantClient
@@ -97,7 +104,7 @@ class QdrantLocalStore:
                 self.embeddings = request_resource(
                     self._request_root, ('embedder', model_name),
                     lambda: FastEmbedEmbeddings(model_name=model_name),
-                )
+                ) if load_embeddings else None
                 self.backend = "qdrant"
             except Exception as exc:
                 self.close()
@@ -132,6 +139,8 @@ class QdrantLocalStore:
             pass
 
     def upsert_chunk(self, chunk_id: str, text: str, payload: dict[str, object]) -> None:
+        if self.backend == 'none':
+            return
         try:
             vector = self.embeddings.embed(text)
             if self.backend == "qdrant" and self.client is not None:
@@ -142,6 +151,46 @@ class QdrantLocalStore:
                 raise RuntimeError(f"qdrant vector upsert failed for {chunk_id}") from exc
             vector = DeterministicEmbeddings(self.vector_size).embed(text)
         self._upsert_fallback(chunk_id, vector, payload)
+
+    def retire_chunks(self, chunk_ids: set[str], *, code_paths: set[str] | None = None) -> int:
+        """Remove only caller-proven derived IDs; caller owns backup/write lock."""
+        code_paths = code_paths or set()
+        if not chunk_ids and not code_paths or self.backend == 'none':
+            return 0
+        if self._local_busy:
+            raise VectorBackendBusyError('qdrant local vector backend is busy')
+        if self.backend == 'qdrant' and self.client is not None:
+            from qdrant_client.models import PointIdsList, FilterSelector, Filter, FieldCondition, MatchAny
+            if self.client.collection_exists(self.collection):
+                if chunk_ids:
+                    self.client.delete(collection_name=self.collection, wait=True,
+                        points_selector=PointIdsList(points=[str(uuid.uuid5(uuid.NAMESPACE_URL, value)) for value in chunk_ids]))
+                if code_paths:
+                    self.client.delete(collection_name=self.collection, wait=True,
+                        points_selector=FilterSelector(filter=Filter(must=[
+                            FieldCondition(key='file_path', match=MatchAny(any=sorted(code_paths))),
+                            FieldCondition(key='kind', match=MatchAny(any=['symbol', 'file']))])))
+        removed = 0
+        if self.fallback_file.exists():
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.path,
+                                                 prefix='.retire-code-', delete=False) as output:
+                    temporary = output.name
+                    with self.fallback_file.open(encoding='utf-8') as source:
+                        for line in source:
+                            record = json.loads(line)
+                            payload = record.get('payload') or {}
+                            retired_path = payload.get('file_path') in code_paths and payload.get('kind') in {'symbol', 'file'}
+                            if record.get('id') in chunk_ids or retired_path:
+                                removed += 1
+                            else:
+                                output.write(line)
+                os.replace(temporary, self.fallback_file)
+            finally:
+                if temporary and os.path.exists(temporary):
+                    os.unlink(temporary)
+        return removed
 
     def _upsert_qdrant(self, chunk_id: str, vector: list[float], payload: dict[str, object]) -> None:
         from qdrant_client.models import Distance, PointStruct, VectorParams
@@ -195,6 +244,8 @@ class QdrantLocalStore:
         return list(self._query_cache[query])
 
     def search(self, query: str, limit: int = 10, *, query_filter=None) -> list[dict[str, object]]:
+        if self.backend == 'none':
+            return []
         if self._local_busy:
             raise VectorBackendBusyError("qdrant local vector backend is busy")
         if self.backend != "qdrant" or self.client is None:

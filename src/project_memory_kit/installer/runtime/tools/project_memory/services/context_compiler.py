@@ -59,7 +59,11 @@ def _rationale_lines(rows: list[dict[str, object]]) -> list[str]:
 
 
 @reuse_request_freshness
-def compile_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = False) -> str:
+def compile_context(root: Path, task: str, base: str = "HEAD", reset_task: bool = False, include_code: bool = False) -> str:
+    from tools.project_memory.services.code_provider import external_code
+    if external_code(root):
+        from tools.project_memory.services.context_builder import build_context
+        return build_context(root, task, base, reset_task=reset_task, include_code=include_code)
     cfg = load_config(root)
     impact = analyze_impact(root, base)
     evidence = local_evidence(root, base)
@@ -112,8 +116,8 @@ def compile_context(root: Path, task: str, base: str = "HEAD", reset_task: bool 
     return "\n".join(lines) + "\n"
 
 
-def write_compiled_context(root: Path, task: str, base: str, out: Path, reset_task: bool = False) -> str:
-    content = compile_context(root, task, base=base, reset_task=reset_task)
+def write_compiled_context(root: Path, task: str, base: str, out: Path, reset_task: bool = False, include_code: bool = False) -> str:
+    content = compile_context(root, task, base=base, reset_task=reset_task, include_code=include_code)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     return str(out)

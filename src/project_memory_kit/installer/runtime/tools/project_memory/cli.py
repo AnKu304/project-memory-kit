@@ -58,7 +58,25 @@ from tools.project_memory.version import __version__
 
 
 def root() -> Path:
+    import os
+    bound = os.environ.get('PMEM_BOUND_ROOT')
+    if bound and Path.cwd().resolve() != Path(bound).resolve():
+        raise ValueError('Shared PMEM runtime root must match its explicit project binding')
     return Path.cwd().resolve()
+
+
+def command_code(args: argparse.Namespace) -> int:
+    from tools.project_memory.services.code_provider import code_query
+    result = code_query(root(), args.operation, repository_id=args.repository, query=args.query,
+                        path=args.path, limit=args.limit, base=args.base)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 1 if result['status'] in {'unavailable', 'timeout'} else 0
+
+
+def command_migrate_code(args: argparse.Namespace) -> int:
+    from tools.project_memory.services.code_migration import migrate_code
+    print(json.dumps(migrate_code(root(), apply=args.apply), ensure_ascii=False, indent=2))
+    return 0
 
 
 def command_init(_: argparse.Namespace) -> int:
@@ -94,7 +112,7 @@ def command_context(args: argparse.Namespace) -> int:
     if not out.is_absolute():
         out = root() / out
     writer = write_compiled_context if args.compiled else write_context
-    written = writer(root(), args.task, args.base, out, reset_task=args.reset_task)
+    written = writer(root(), args.task, args.base, out, reset_task=args.reset_task, include_code=args.include_code)
     print(written)
     return 0
 
@@ -223,9 +241,12 @@ def command_modules(args: argparse.Namespace) -> int:
 
 
 def command_mcp(args: argparse.Namespace) -> int:
+    import os
     mcp_root = Path(args.root)
     if not mcp_root.is_absolute():
         mcp_root = root() / mcp_root
+    if os.environ.get('PMEM_BOUND_ROOT') and mcp_root.resolve() != Path(os.environ['PMEM_BOUND_ROOT']).resolve():
+        raise ValueError('MCP root must match the explicit shared-runtime project binding')
     return serve_stdio(mcp_root)
 
 
@@ -315,8 +336,19 @@ def command_uninstall(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="pmem")
+    parser = argparse.ArgumentParser(prog="pmem", allow_abbrev=False)
     sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser('code', allow_abbrev=False)
+    p.add_argument('operation', choices=['status', 'search', 'context', 'impact', 'changes', 'resolve'], nargs='?', default='status')
+    p.add_argument('--repository')
+    p.add_argument('--query', default='')
+    p.add_argument('--path')
+    p.add_argument('--limit', type=int, default=5)
+    p.add_argument('--base', default='HEAD')
+    p.set_defaults(func=command_code)
+    p = sub.add_parser('migrate-code', allow_abbrev=False)
+    p.add_argument('--apply', action='store_true')
+    p.set_defaults(func=command_migrate_code)
 
     p = sub.add_parser("init")
     p.set_defaults(func=command_init)
@@ -344,6 +376,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--base", default="HEAD")
     p.add_argument("--out", default=".project-memory/reports/CHANGE_CONTEXT.md")
     p.add_argument("--reset-task", action="store_true")
+    p.add_argument('--include-code', action='store_true')
     p.add_argument("--compiled", action="store_true")
     p.set_defaults(func=command_context)
 

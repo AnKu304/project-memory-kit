@@ -112,6 +112,17 @@ def _tool_relations(root: Path, args: dict[str, Any]) -> dict[str, Any]:
     return _text_result(json.dumps(result, ensure_ascii=False), result)
 
 
+def _tool_code(root: Path, args: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_memory.services.code_provider import code_query
+    if set(args) - {'operation', 'repository_id', 'query', 'path', 'limit', 'base'}:
+        raise ValueError('Unexpected code-provider arguments; root changes are forbidden')
+    result = code_query(root, args.get('operation', 'status'), repository_id=args.get('repository_id'),
+                        query=args.get('query', ''), path=args.get('path'), limit=args.get('limit', 5),
+                        base=args.get('base', 'HEAD'))
+    return _text_result(json.dumps(result, ensure_ascii=False), result,
+                        is_error=result['status'] in {'unavailable', 'timeout'})
+
+
 
 def _tool_memory_write(root: Path, args: dict[str, Any], kind: str, action: str) -> dict[str, Any]:
     result = write_memory(root, kind, action, args)
@@ -124,7 +135,8 @@ def _tool_context(root: Path, args: dict[str, Any]) -> dict[str, Any]:
         return _text_result("task is required.", {}, is_error=True)
     base = str(args.get("base") or "HEAD")
     reset_task = bool(args.get("reset_task", True))
-    context = build_context(root, task, base=base, reset_task=reset_task)
+    include_code = bool(args.get('include_code', False))
+    context = build_context(root, task, base=base, reset_task=reset_task, include_code=include_code)
     return _text_result(context, {"task": task, "base": base, "reset_task": reset_task, "context": context})
 
 
@@ -363,6 +375,7 @@ TOOL_HANDLERS: dict[str, ToolHandler] = {
     "pmem_status": _tool_status,
     "pmem_overview": _tool_overview,
     "pmem_relations": _tool_relations,
+    "pmem_code": _tool_code,
     "pmem_knowledge_add": lambda root, args: _tool_memory_write(root, args, "knowledge", "add"),
     "pmem_knowledge_update": lambda root, args: _tool_memory_write(root, args, "knowledge", "update"),
     "pmem_rationale_add": lambda root, args: _tool_memory_write(root, args, "rationale", "add"),
@@ -467,6 +480,10 @@ def serve_stdio(root: Path, stdin: TextIO | None = None, stdout: TextIO | None =
     input_stream = stdin or sys.stdin
     output_stream = stdout or sys.stdout
     project_root = root.resolve()
+    import os
+    bound = os.environ.get('PMEM_BOUND_ROOT')
+    if bound and project_root != Path(bound).resolve():
+        raise ValueError('MCP root must match the explicit shared-runtime project binding')
 
     for raw_line in input_stream:
         line = raw_line.strip()

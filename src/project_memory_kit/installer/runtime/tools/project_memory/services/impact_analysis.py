@@ -128,7 +128,20 @@ def _linked_test_targets(root: Path, store: SQLiteGraphStore, file_id: str, path
     return targets
 
 
+def _provider_impact(root: Path, base: str) -> dict[str, Any]:
+    from tools.project_memory.services.code_provider import code_query
+    provider = code_query(root, 'changes', base=base)
+    return {'base': base, 'git_available': False, 'impact_status': provider['status'],
+            'diagnostics': [*provider.get('diagnostics', []),
+                'GitNexus changes evidence attached; configured checks do not establish graph-derived test coverage.'],
+            'code_provider': provider, 'changed_files': [], 'touched_symbols': [],
+            'affected_files': [], 'route_impacts': [], 'tests': [], 'risk': 'unknown'}
+
+
 def analyze_impact(root: Path, base: str = "HEAD") -> dict[str, Any]:
+    from tools.project_memory.services.code_provider import external_code
+    if external_code(root):
+        return _provider_impact(root, base)
     if not git_available(root):
         return {"base": base, "git_available": False, "impact_status": "unavailable",
                 "diagnostics": [git_limitation(root)], "changed_files": [], "touched_symbols": [],
@@ -223,6 +236,7 @@ def format_impact(report: dict[str, Any], fmt: str = "markdown") -> str:
     if not report.get("git_available", True):
         return "\n".join(["# Impact Report", "", f"Base: `{report['base']}`", "Risk: **unknown**", "",
                           *(f"- {item}" for item in report.get("diagnostics", [])),
+                          *([json.dumps(report['code_provider'], ensure_ascii=False)] if 'code_provider' in report else []),
                           "- Empty change/test lists do not establish safety. Use bounded search and select checks from actual source changes."]) + "\n"
     lines = [
         "# Impact Report",

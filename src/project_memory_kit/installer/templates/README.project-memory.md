@@ -2,7 +2,14 @@
 
 This directory stores local Dependency Graph RAG state for one exact root. Follow the Local Project Memory Protocol in `AGENTS.md` or `CLAUDE.md`; this README does not add a second startup sequence. Start meaningful work with one bounded context, then inspect relevant sources. Doctor is for setup/runtime changes/malfunction; index and extra impact/test selection are conditional on stale or changed inputs, not every task.
 
-An explicitly chosen non-Git container uses `pmem init --target "<container>" --no-git-init`; its saved mode survives upgrade. Code repositories and marketing/design can share that container's database. Private agent files, archives, secrets, DBs, and external symlinks stay excluded. Never initialize or index the parent directory of all projects. Git-specific impact/tests `unavailable` is not an empty successful diff.
+An explicitly chosen non-Git container uses `pmem init --target "<container>" --no-git-init`; its saved mode survives upgrade. Documents and marketing/design share that container's isolated database; the configured GitNexus provider serves its exact code repositories. Private agent files, archives, secrets, DBs, and external symlinks stay excluded. Never initialize or index the parent directory of all projects. Git-specific impact/tests `unavailable` is not an empty successful diff.
+
+Shared runtime/registry may sit above projects while each `.project-memory/`
+stays local. Use `./pmem code` to inspect explicit repository bindings. PMEM
+refreshes documents and durable records; GitNexus refreshes code. Missing/stale
+provider coverage is reported explicitly. Code migration is managed and backed
+up: preview `./pmem migrate-code`, then apply only for authorized setup with
+`--apply`; durable IDs, bodies, lifecycle and relations are preserved.
 
 Project knowledge lives in `knowledge/`. These Markdown files are the full source for research notes, architecture decisions, SEO rules, design principles, UX rules, product mechanics, and other durable project context.
 

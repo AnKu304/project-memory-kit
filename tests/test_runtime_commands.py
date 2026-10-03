@@ -1239,7 +1239,9 @@ class RuntimeCommandsTest(unittest.TestCase):
             self.assertEqual(context.returncode, 0, context.stdout)
             content = (root / ".project-memory/reports/CHANGE_CONTEXT.md").read_text(encoding="utf-8")
             self.assertIn("# Change Context", content)
-            self.assertIn("## Agent Checklist", content)
+            self.assertIn("## Task Guidance", content)
+            self.assertIn("Refresh indexing only for stale or changed inputs", content)
+            self.assertNotIn("## Agent Checklist", content)
 
             search = subprocess.run(
                 [str(root / "pmem"), "search", "--query", "pay amount", "--limit", "5"],

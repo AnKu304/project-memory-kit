@@ -103,11 +103,15 @@ def validate_links(store, kind, entry_id, links, owner_path=None):
         if not isinstance(link['relation'], str) or link['relation'] not in RELATIONS:
             raise ValueError('Unknown relation type')
         target = link['target']
-        if not isinstance(target, dict) or set(target) != {'kind', 'id'}:
+        expected = {'kind', 'id', 'reference'} if isinstance(target, dict) and target.get('kind') == 'code' else {'kind', 'id'}
+        if not isinstance(target, dict) or set(target) != expected:
             raise ValueError('Target must contain only local kind and id')
         target_kind = _text(target['kind'], 'target kind', 32)
         target_id = _text(target['id'], 'target id')
-        if target_kind in ('knowledge', 'rationale'):
+        if target_kind == 'code':
+            from tools.project_memory.services.code_provider import validate_code_reference
+            validate_code_reference(store.root, target['reference'])
+        elif target_kind in ('knowledge', 'rationale'):
             if target_kind == kind and target_id == entry_id:
                 raise ValueError('Self relation is forbidden')
             if not re.fullmatch(r'[A-Za-z0-9_-]+', target_id):
@@ -218,6 +222,14 @@ def relation_details(store, kind, entry_id, limit=20):
             if target['kind'] in ('knowledge', 'rationale'):
                 rows = _query(store, f"SELECT status FROM {target['kind']}_entries WHERE id=?", (target['id'],))
                 detail['target_status'] = rows[0]['status'] if rows else 'missing'
+            elif target['kind'] == 'code':
+                from tools.project_memory.services.code_provider import resolve_code_reference
+                try:
+                    detail['code_resolution'] = resolve_code_reference(store.root, target['reference'])
+                    detail['target_status'] = detail['code_resolution']['reference_status']
+                except (ValueError, OSError) as exc:
+                    detail['target_status'] = 'unavailable'
+                    detail['code_resolution'] = {'diagnostics': [str(exc)]}
             detail['status'] = link['status']
         result.append(detail)
     return result

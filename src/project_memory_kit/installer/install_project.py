@@ -125,8 +125,10 @@ exit $LASTEXITCODE
 def _run_runtime(root: Path, report: InstallReport, args: list[str]) -> bool:
     env = dict(os.environ)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    from project_memory_kit.installer.shared_runtime import shared_binding
+    command_args = [str(root / "pmem"), *args] if shared_binding(root) else [sys.executable, "-m", "tools.project_memory.cli", *args]
     result = subprocess.run(
-        [sys.executable, "-m", "tools.project_memory.cli", *args],
+        command_args,
         cwd=root,
         env=env,
         text=True,
@@ -217,6 +219,15 @@ def _write_or_merge_config(config_dest: Path, upgrade: bool, report: InstallRepo
     report.add_path("backed_up", backup)
     config_dest.write_text(rendered, encoding="utf-8")
     report.add_path("updated", config_dest)
+
+
+def _configure_new_shared_memory(path: Path) -> None:
+    if yaml is None:
+        raise ValueError("PyYAML installer dependency is required for a new shared-runtime project")
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data["code_provider"] = {"backend": "gitnexus", "repositories": []}
+    data.setdefault("indexing", {}).setdefault("auto_index", {})["enabled"] = False
+    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
 
 
 def _write_or_merge_claude_settings(path: Path, report: InstallReport) -> None:
@@ -345,6 +356,9 @@ def _write_install_metadata(root: Path, report: InstallReport, operation: str, a
     }
     if installation_mode == "non_git_container":
         data["installation_pending"] = installation_pending
+    for key in ("runtime_layout", "shared_runtime", "binding_id"):
+        if key in previous:
+            data[key] = previous[key]
     rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
@@ -425,8 +439,10 @@ def install_project(
     upgrade: bool = False,
     with_vector: bool = False,
     no_git_init: bool = False,
+    shared_runtime: Path | None = None,
 ) -> ProjectInstallResult:
     root = target.resolve()
+    new_config = not (root / ".project-memory/config.yaml").exists()
     installation_mode = _installation_mode(root, no_git_init)
     if installation_mode == "non_git_container":
         for relative in (".project-memory", ".project-memory/install.json", ".project-memoryignore"):
@@ -454,6 +470,8 @@ def install_project(
     (project_memory / "reports").mkdir(exist_ok=True)
 
     _write_or_merge_config(project_memory / "config.yaml", upgrade=upgrade, report=report)
+    if shared_runtime is not None and new_config:
+        _configure_new_shared_memory(project_memory / "config.yaml")
 
     write_managed_file(template_path("project-memory.gitignore"), project_memory / ".gitignore", report)
     write_managed_file(template_path("README.project-memory.md"), project_memory / "README.md", report)
@@ -467,10 +485,21 @@ def install_project(
     else:
         _install_multiagent_profile(root, report)
 
-    copy_tree(runtime_root() / "tools" / "project_memory", root / "tools" / "project_memory", report)
-    if with_vector:
-        _setup_vector_runtime(root, report)
-    _write_wrappers(root, report)
+    from project_memory_kit.installer.shared_runtime import bind_shared_runtime, shared_binding
+    binding = shared_binding(root)
+    if binding or shared_runtime is not None:
+        if with_vector:
+            raise ValueError("Install shared vector dependencies with `pmem runtime install --with-vector` first")
+        if binding and shared_runtime is not None and Path(binding["runtime_root"]).resolve() != shared_runtime.resolve():
+            raise ValueError("Existing shared runtime binding differs from --shared-runtime")
+        _write_install_metadata(root, report, "upgrade" if upgrade else "install", agent_profile, installation_mode, installation_pending=installation_mode == "non_git_container")
+        shared_report = bind_shared_runtime(root, shared_runtime or Path(binding["runtime_root"]))
+        report.commands.extend(shared_report.commands)
+    else:
+        copy_tree(runtime_root() / "tools" / "project_memory", root / "tools" / "project_memory", report)
+        if with_vector:
+            _setup_vector_runtime(root, report)
+        _write_wrappers(root, report)
     _write_install_metadata(root, report, "upgrade" if upgrade else "install", agent_profile, installation_mode, installation_pending=installation_mode == "non_git_container")
 
     required_results = [_run_runtime(root, report, [command]) for command in ("init", "migrate", "doctor")]
@@ -512,7 +541,10 @@ def uninstall_project(target: Path, purge: bool = False, keep_memory: bool = Tru
         root / ".claude" / "agents" / "pmem-reviewer.md",
         root / "tools" / "project_memory",
     ]:
-        if path.is_dir():
+        if path.is_symlink():
+            path.unlink()
+            report.add_path("updated", path)
+        elif path.is_dir():
             shutil.rmtree(path)
             report.add_path("updated", path)
         elif path.exists():

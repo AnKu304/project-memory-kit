@@ -20,7 +20,7 @@ SECRET_PATTERNS = [
     "*credential*",
     "*token*",
 ]
-PRUNE_DIR_NAMES = {".git", ".project-memory", ".kimi-code", "__pycache__", "node_modules", ".venv", "venv"}
+PRUNE_DIR_NAMES = {".git", ".gitnexus", ".project-memory", ".kimi-code", "__pycache__", "node_modules", ".venv", "venv"}
 CONTAINER_EXCLUDES = {"agent", "archive", "archives", "raw", "backup", "backups", "logs", "screenshots", ".codex"}
 DATABASE_PATTERNS = ("*.sqlite", "*.sqlite-*", "*.sqlite3", "*.sqlite3-*", "*.db", "*.db-*")
 
@@ -109,6 +109,9 @@ def should_index(root: Path, path: Path) -> bool:
         return False
     cfg = load_config(root)
     include = set(cfg.get("indexing", {}).get("include_extensions", []))
+    from tools.project_memory.services.code_provider import external_code, is_code_source
+    if external_code(root, cfg) and is_code_source(root, path, cfg):
+        return False
     return path.suffix in include
 
 
@@ -142,4 +145,6 @@ def iter_project_files(root: Path, ignore_file_patterns: bool = True) -> list[Pa
 def iter_indexable_files(root: Path) -> list[Path]:
     cfg = load_config(root)
     include = set(cfg.get("indexing", {}).get("include_extensions", []))
-    return [path for path in iter_project_files(root) if path.suffix in include]
+    from tools.project_memory.services.code_provider import external_code, is_code_source
+    slim = external_code(root, cfg)
+    return [path for path in iter_project_files(root) if path.suffix in include and not (slim and is_code_source(root, path, cfg))]

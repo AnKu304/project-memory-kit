@@ -4,13 +4,16 @@ Russian version: [README.md](README.md)
 
 Version changes: [CHANGELOG.md](CHANGELOG.md)
 
-`project-memory-kit` adds local project memory for coding agents. It keeps project context next to the code: files, symbols, imports, reverse dependencies, relevant tests, previous failures, research, and rationale.
+Version 0.24.0 adds a shared runtime with isolated project bindings, a GitNexus
+code provider and recoverable retirement of the derived native code index.
+
+`project-memory-kit` provides local project memory: working context, documents, previous failures, research, durable knowledge and rationale. GitNexus serves code graphs, symbols and dependencies through an explicit project binding.
 
 The goal is simple: several chats can work on one project without losing dependency context.
 
 ## Local project memory
 
-PMEM serves agents with bounded context, search, dependencies, knowledge and
+PMEM serves agents with bounded context, document search, knowledge and
 decision rationale. Code is not the only source: marketing, design, research
 and analytics may live in the same isolated project.
 
@@ -36,8 +39,9 @@ pmem init --target "/path/Working projects/Project name" --no-git-init --agent m
 ```
 
 Upgrade preserves this mode and never initializes Git in the container. Do not
-select the parent Working projects folder or Desktop. Code and allowed text
-materials inside the chosen root are eligible; `agent/`, archives, sensitive
+select the parent Working projects folder or Desktop. PMEM indexes allowed text
+materials inside the chosen root; code roots are registered separately in GitNexus.
+`agent/`, archives, sensitive
 paths, databases, runtime and symlink sources are excluded. Marketing need not
 be copied into Git. Run `./pmem index --mode full` separately after checking scope.
 Installation starts no watcher and does not index neighbouring projects by default.
@@ -46,6 +50,51 @@ Git diff/impact and Git-based test selection are **unavailable** at a non-Git
 container root. Nested repositories are indexed as sources, but cross-repository
 Git diff is not implemented. Use the relevant repository and its tools for exact
 Git impact; empty change lists are not evidence of safety.
+
+## Shared runtime and code index
+
+Install the runtime once for several working projects, then bind each exact root:
+
+```bash
+pmem runtime install --target /absolute/shared/pmem --with-vector
+pmem runtime bind --target /absolute/project --runtime /absolute/shared/pmem
+```
+
+The shared runtime contains code and its environment; its registry records
+explicit project IDs and roots. Each project retains its own `.project-memory/`,
+knowledge, rationale and queue. Its wrapper and MCP use the same binding;
+shared binaries grant no cross-project private-memory access. Previous managed
+runtime copies are archived for recovery.
+
+Configure `code_provider` with `backend: gitnexus`, absolute `command`,
+`registry_path`, and explicit `repositories` containing stable ID, relative
+`path` and registered `name`. Root and registry checks enforce selection.
+An empty list is valid for a project without code; it is not a ready code graph.
+`./pmem code` reports the provider. Agents retrieve reasons through knowledge/
+rationale and access the relevant code repository using GitNexus or
+the installed `./pmem code` command.
+
+Bounded context reads only the selected project's memory by default. Fill a
+concrete code gap using `./pmem code search --repository <ID> --query <text>`
+or `./pmem context --include-code`; MCP accepts `include_code: true`. Code
+output shares one bounded budget. For unsupported HTML/CSS, configure
+`document_extensions: [.html, .htm, .css, .scss]` in `code_provider`: PMEM retains
+searchable text chunks without its own code parser/graph. GitNexus coverage
+diagnostics remain explicit.
+
+`./pmem migrate-code` previews derived PMEM code-index removal. Only `--apply`
+performs the managed migration with a backup and durable ID, body, lifecycle
+and relation preservation checks. History and source files remain. Afterwards,
+PMEM refreshes documents while GitNexus refreshes code. Index each exact source root:
+
+```bash
+gitnexus analyze /absolute/project/code --index-only --embeddings --name project-code
+```
+
+Add `--skip-git` for a real non-Git prototype; do not index its parent on top
+of nested repositories. Local embeddings are optional and missing/unavailable
+semantic support is reported explicitly. Shared binaries do not imply a shared
+database. Verify live MCP calls after the client reconnects.
 
 ## MCP reads and writes
 

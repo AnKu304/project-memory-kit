@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.0
+
+- Shared managed runtime and Python environment above projects, with exact-root registry bindings and isolated existing project databases.
+- `pmem runtime install`, `pmem runtime bind`, and `pmem init --shared-runtime` support source-checkout upgrades and new-project onboarding without duplicated runtime copies.
+- GitNexus code-provider routing separates code indexing from PMEM durable knowledge, rationale and causal relations; optional FTS-only memory retrieval.
+- Binding migration preserves runtime recovery archives, validates dependencies and doctor, rejects active legacy consumers, and rolls back pre-retirement launch failures.
+
 ## 0.23.2
 
 - Added project-local Kimi Code MCP configuration alongside Claude Code, sharing the existing PMEM root/database.

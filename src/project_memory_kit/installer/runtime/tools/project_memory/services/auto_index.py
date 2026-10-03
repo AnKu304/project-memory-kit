@@ -120,6 +120,9 @@ def index_freshness(root: Path, sample_limit: int = 8) -> IndexFreshness:
     store.initialize()
     files = iter_indexable_files(root)
     stored_hashes = store.indexed_file_hashes()
+    from tools.project_memory.services.code_provider import external_code, is_code_source
+    if external_code(root):
+        stored_hashes = {path: value for path, value in stored_hashes.items() if not is_code_source(root, path)}
     sample: list[str] = []
     missing = 0
     stale = 0
@@ -158,6 +161,9 @@ def index_freshness(root: Path, sample_limit: int = 8) -> IndexFreshness:
 
 def auto_index_enabled(root: Path, command: str) -> bool:
     cfg = load_config(root)
+    from tools.project_memory.services.code_provider import external_code
+    if external_code(root, cfg):
+        return False  # Memory reads never become a second code/material writer.
     auto_cfg = cfg.get("indexing", {}).get("auto_index", {})
     if not bool(auto_cfg.get("enabled", True)):
         return False

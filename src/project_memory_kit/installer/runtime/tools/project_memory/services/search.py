@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import closing
 from functools import lru_cache
+import json
 import re
 import sqlite3
 from pathlib import Path
@@ -31,7 +32,7 @@ SEMANTIC_BUSY = "Semantic search unavailable: local Qdrant is busy; returning SQ
 
 
 class SearchFilter:
-    def __init__(self, root, cfg, audience="project", domain=None, memory_type=None):
+    def __init__(self, root, cfg, audience="project", domain=None, memory_type=None, include_archived=False):
         validate_memory_classification(cfg)
         domains = DOMAINS | set(cfg.get("memory", {}).get("classification", {}).get("domains", []))
         if not isinstance(audience, str) or audience not in AUDIENCES | {"all"}:
@@ -41,6 +42,11 @@ class SearchFilter:
         if memory_type is not None and (not isinstance(memory_type, str) or memory_type not in TYPES):
             raise ValueError(f"Unknown memory type: {memory_type}")
         self.audience, self.domain, self.memory_type = audience, domain, memory_type
+        self.include_archived = include_archived
+        from tools.project_memory.services.code_provider import external_code
+        self.external_code = external_code(root, cfg)
+        self.root, self.cfg = root, cfg
+        self.status_by_path = {}
 
         @lru_cache(maxsize=1024)
         def metadata(path):
@@ -50,9 +56,26 @@ class SearchFilter:
                 return None  # Outside-root and symlink escapes never qualify.
         self.metadata = metadata
 
+    def bind_lifecycle(self, store):
+        entries = {}
+        for kind in ("knowledge", "rationale"):
+            for row in store.query(f"SELECT id, path, status FROM {kind}_entries"):
+                entries[kind, row["id"]] = row["status"]
+                self.status_by_path[row["path"]] = row["status"]
+        # Human exports are derived copies; their source record owns lifecycle.
+        for row in store.query("SELECT path, properties_json FROM nodes WHERE kind = 'HumanNote'"):
+            properties = json.loads(row["properties_json"] or "{}")
+            status = entries.get((properties.get("source_layer"), properties.get("source_id")))
+            if status is not None:
+                self.status_by_path[row["path"]] = status
+
     def matches(self, path):
+        from tools.project_memory.services.code_provider import is_code_source
+        if self.external_code and is_code_source(self.root, path, self.cfg):
+            return False
         data = self.metadata(path)
         return bool(data and data["memory_scope"] == "project"
+                    and (self.include_archived or self.status_by_path.get(path, "current") == "current")
                     and (self.audience == "all" or data["memory_audience"] == self.audience)
                     and (self.domain is None or data["memory_domain"] == self.domain)
                     and (self.memory_type is None or data["memory_type"] == self.memory_type))
@@ -194,16 +217,26 @@ def _layer_component(layer: str | None) -> float:
     return 0.55
 
 
-def _lifecycle_component(store: SQLiteGraphStore, row: dict[str, object]) -> tuple[float, str]:
+def _lifecycle_component(store: SQLiteGraphStore, row: dict[str, object], status_by_path=None) -> tuple[float, str]:
     path = str(row.get("path") or "")
-    if "/knowledge/" in path or path.startswith(".project-memory/knowledge/"):
-        rows = store.query("SELECT status FROM knowledge_entries WHERE path = ?", (path,))
-    elif "/rationale/" in path or path.startswith(".project-memory/rationale/"):
-        rows = store.query("SELECT status FROM rationale_entries WHERE path = ?", (path,))
-    else:
-        return 1.0, "non-memory"
+    if status_by_path is not None:
+        status = status_by_path.get(path)
+        if status is None:
+            return 1.0, "non-memory"
+        return (1.0, "current") if status == "current" else (0.35 if status == "superseded" else 0.25, status)
+    rows = store.query(
+        "SELECT status FROM knowledge_entries WHERE path = ? UNION ALL "
+        "SELECT status FROM rationale_entries WHERE path = ?", (path, path),
+    )
     if not rows:
-        return 0.85, "memory record missing lifecycle row"
+        nodes = store.query("SELECT properties_json FROM nodes WHERE id = ? AND kind = 'HumanChunk'",
+                            (str(row.get("chunk_id") or ""),))
+        properties = json.loads(nodes[0]["properties_json"] or "{}") if nodes else {}
+        kind = properties.get("source_layer")
+        if kind in {"knowledge", "rationale"}:
+            rows = store.query(f"SELECT status FROM {kind}_entries WHERE id = ?", (properties.get("source_id"),))
+        if not rows:
+            return (0.85, "memory record missing lifecycle row") if nodes else (1.0, "non-memory")
     status = str(rows[0]["status"])
     if status == "current":
         return 1.0, "current"
@@ -258,7 +291,7 @@ def _merge_candidates(candidates: list[dict[str, object]]) -> list[dict[str, obj
     return list(merged.values())
 
 
-def _apply_hybrid_scores(root: Path, store: SQLiteGraphStore, query: str, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+def _apply_hybrid_scores(root: Path, store: SQLiteGraphStore, query: str, rows: list[dict[str, object]], status_by_path=None) -> list[dict[str, object]]:
     weights = _weights(root)
     scored: list[dict[str, object]] = []
     for row in rows:
@@ -274,7 +307,7 @@ def _apply_hybrid_scores(root: Path, store: SQLiteGraphStore, query: str, rows: 
         layer = _layer_for_row(store, row)
         components["layer"] = _layer_component(layer)
         components["recency"] = _recency_component(store, row)
-        lifecycle, lifecycle_reason = _lifecycle_component(store, row)
+        lifecycle, lifecycle_reason = _lifecycle_component(store, row, status_by_path)
         components["lifecycle"] = lifecycle
         score = min(1.0, sum(weights.get(key, 0.0) * value for key, value in components.items()))
         score *= lifecycle
@@ -489,8 +522,8 @@ def _vector_search(
     return rows
 
 
-def search(root: Path, query: str, limit: int = 10, layer: str | None = None, debug: bool = False, *, audience: str = "project", domain: str | None = None, memory_type: str | None = None) -> list[dict[str, object]]:
-    filters = SearchFilter(root, load_config(root), audience, domain, memory_type)
+def search(root: Path, query: str, limit: int = 10, layer: str | None = None, debug: bool = False, *, audience: str = "project", domain: str | None = None, memory_type: str | None = None, include_archived: bool = False) -> list[dict[str, object]]:
+    filters = SearchFilter(root, load_config(root), audience, domain, memory_type, include_archived)
     diagnostics: list[str] = []
     try:
         notice = ensure_fresh_index(root, "search")
@@ -503,6 +536,7 @@ def search(root: Path, query: str, limit: int = 10, layer: str | None = None, de
     diagnostics.extend(item for item in request_freshness_diagnostics(root) if item not in diagnostics)
     store = SQLiteGraphStore(root, config_path(root, "graph_db"))
     store.initialize()
+    filters.bind_lifecycle(store)
     candidates: list[dict[str, object]] = []
     try:
         if not request_vector_busy(root) and SEMANTIC_BUSY not in diagnostics:
@@ -519,7 +553,7 @@ def search(root: Path, query: str, limit: int = 10, layer: str | None = None, de
         candidates.append(row)
         if len(candidates) >= limit * 3:
             break
-    results = _diversify_results(_apply_hybrid_scores(root, store, query, _merge_candidates(candidates)))
+    results = _diversify_results(_apply_hybrid_scores(root, store, query, _merge_candidates(candidates), filters.status_by_path))
     if not debug:
         for item in results:
             item.pop("sources", None)

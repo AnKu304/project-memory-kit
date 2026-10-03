@@ -11,6 +11,7 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_text, stable_id
 from tools.project_memory.services.search import search as global_search
+from tools.project_memory.services.memory_status import with_record_status
 from tools.project_memory.services.memory_relations import (
     links_from_markdown, load_links, save_links, validate_links, with_links,
 )
@@ -306,24 +307,26 @@ def _index_entry(
                     "INSERT INTO chunks_fts(chunk_id, path, fqn, content) VALUES (?, ?, ?, ?)",
                     (chunk_id, path, f"rationale:{entry_id}", f"{title}\n{summary}\n{chunk}"),
                 )
-            vectors.upsert_chunk(
-                chunk_id,
-                f"{title}\n{summary}\n{chunk}",
-                {
-                    "chunk_id": chunk_id,
-                    "node_id": chunk_id,
-                    "file_path": path,
-                    "rationale_id": entry_id,
-                    "rationale_type": rationale_type,
-                    "title": title,
-                    "status": status,
-                    "version": version,
-                    "kind": "rationale",
-                    "hash": sha256_text(content),
-                },
-            )
+            if vectors is not None:
+                vectors.upsert_chunk(
+                    chunk_id,
+                    f"{title}\n{summary}\n{chunk}",
+                    {
+                        "chunk_id": chunk_id,
+                        "node_id": chunk_id,
+                        "file_path": path,
+                        "rationale_id": entry_id,
+                        "rationale_type": rationale_type,
+                        "title": title,
+                        "status": status,
+                        "version": version,
+                        "kind": "rationale",
+                        "hash": sha256_text(content),
+                    },
+                )
     finally:
-        vectors.close()
+        if vectors is not None:
+            vectors.close()
 
 
 def _save_links(store: SQLiteGraphStore, entry_id: str, links: Iterable[str | dict]) -> None:
@@ -558,31 +561,20 @@ def retire_rationale(root: Path, entry_id: str, status: str = ARCHIVED) -> Ratio
     row = _entry_row(store, entry_id)
     if not row:
         raise ValueError(f"rationale entry not found: {entry_id}")
+    path = root / row["path"]
+    content = with_record_status(path.read_text(encoding="utf-8"), status)
+    path.write_text(content, encoding="utf-8")
     now = utc_now()
     with store.connect() as conn:
         conn.execute(
-            "UPDATE rationale_entries SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now, entry_id),
+            "UPDATE rationale_entries SET status = ?, content_hash = ?, updated_at = ? WHERE id = ?",
+            (status, sha256_text(content), now, entry_id),
         )
-    _clear_entry_chunks(store, row["path"])
-    store.upsert_node(
-        kind="Rationale",
-        name=row["title"],
-        fqn=entry_id,
-        path=row["path"],
-        language="markdown",
-        layer="rationale",
-        properties={
-            "type": row["type"],
-            "status": status,
-            "version": int(row["version"]),
-            "summary": row["summary"],
-            "decision": row["decision"],
-            "why": row["why"],
-            "rejected": json.loads(row["rejected_json"] or "[]"),
-            "evidence": json.loads(row["evidence_json"] or "[]"),
-            "tags": json.loads(row["tags_json"] or "[]"),
-        },
+    _index_entry(
+        root, store, entry_id, row["type"], row["title"], status,
+        int(row["version"]), row["path"], row["summary"], content,
+        json.loads(row["tags_json"] or "[]"), row["decision"], row["why"],
+        json.loads(row["rejected_json"] or "[]"), json.loads(row["evidence_json"] or "[]"),
     )
     return RationaleResult(entry_id, row["type"], row["title"], status, int(row["version"]), row["path"])
 
@@ -598,7 +590,7 @@ def show_rationale(root: Path, entry_id: str) -> str:
 
 def search_rationale(root: Path, query: str, limit: int = 5, include_archived: bool = False) -> list[dict[str, object]]:
     store = _store(root)
-    rows = global_search(root, query, max(limit * 4, limit), layer="rationale")
+    rows = global_search(root, query, max(limit * 4, limit), layer="rationale", include_archived=include_archived)
     entry_paths = {
         str(row["path"]): row
         for row in store.query(

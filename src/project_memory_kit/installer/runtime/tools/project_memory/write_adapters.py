@@ -19,9 +19,20 @@ def _object(properties, required=()):
 
 TEXT = dict(type='string', minLength=1, maxLength=2048)
 ID = {**TEXT, 'pattern': '^[A-Za-z0-9_-]+$'}
+CODE_REFERENCE_SCHEMA = _object({
+    'schema_version': {'type': 'number', 'minimum': 1, 'maximum': 1},
+    'provider': {'type': 'string', 'enum': ['gitnexus']},
+    'repository_id': TEXT, 'path': TEXT,
+    'revision': {'type': 'string', 'pattern': '^(?:[0-9a-f]{40,64}|snapshot:[0-9a-f]{64})$'},
+    'symbol': TEXT, 'symbol_id': TEXT,
+    'content_hash': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'},
+}, ['schema_version', 'provider', 'repository_id', 'path', 'revision'])
 LINK_SCHEMA = {'anyOf': [TEXT, _object({
     'relation': {'type': 'string', 'enum': sorted(RELATIONS)},
-    'target': _object({'kind': {'type': 'string', 'enum': ['knowledge', 'rationale', 'file', 'domain']}, 'id': TEXT}, ['kind', 'id']),
+    'target': {'anyOf': [
+        _object({'kind': {'type': 'string', 'enum': ['knowledge', 'rationale', 'file', 'domain']}, 'id': TEXT}, ['kind', 'id']),
+        _object({'kind': {'type': 'string', 'enum': ['code']}, 'id': TEXT,
+                 'reference': CODE_REFERENCE_SCHEMA}, ['kind', 'id', 'reference'])]},
     'source': _object({'path': TEXT, 'revision': {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}}, ['path', 'revision']),
     'evidence': {'type': 'array', 'items': TEXT, 'minItems': 1, 'maxItems': 20},
     'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1},

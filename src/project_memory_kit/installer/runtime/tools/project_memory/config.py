@@ -10,6 +10,7 @@ except Exception:  # pragma: no cover
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "code_provider": {"backend": "native", "repositories": [], "timeout_seconds": 30},
     "paths": {
         "graph_db": ".project-memory/graph.sqlite",
         "qdrant_path": ".project-memory/qdrant",
@@ -48,6 +49,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         ],
         "ignore": [
             ".git/",
+            ".gitnexus/",
             ".project-memory/",
             "__pycache__/",
             ".venv/",
@@ -178,8 +180,14 @@ def normalize_config(config: dict[str, Any], source_version: int) -> dict[str, A
 
 def load_config(root: Path) -> dict[str, Any]:
     path = root / ".project-memory" / "config.yaml"
-    if not path.exists() or yaml is None:
+    if not path.exists():
         return DEFAULT_CONFIG
+    if yaml is None:
+        raise RuntimeError(
+            "Cannot read .project-memory/config.yaml: PyYAML is unavailable in this interpreter. "
+            "Run pmem with PYTHON set to an existing interpreter with PyYAML; "
+            "configured project settings must not be replaced by defaults."
+        )
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     source_version = _int_value(data.get("version"))
     return normalize_config(deep_merge(DEFAULT_CONFIG, data), source_version)

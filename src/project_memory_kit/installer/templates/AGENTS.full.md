@@ -32,7 +32,7 @@ Suggested examples:
 
 <!-- USER EDITABLE: document when to use project-specific external skills installed separately with tools such as `npx skills add`. -->
 
-External skills may exist in `.agents/skills/`. Use them when relevant, but they do not replace the mandatory project-memory protocol below.
+External skills may also exist in `.agents/skills/`. Use them when relevant, but they do not replace the mandatory project-memory protocol below.
 
 Examples to customize or delete:
 
@@ -44,4 +44,3 @@ Examples to customize or delete:
 ## Local Project Memory
 
 The following block is managed by `project-memory-kit`.
-

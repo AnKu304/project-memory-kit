@@ -1,0 +1,19 @@
+# Local pilot boundary: generated/private project state is never codegraph input.
+.project-memory/
+.gitnexus/
+.codex/
+.claude/
+.agents/
+agent/
+archive/
+archives/
+marketing/
+design/
+.env*
+**/.env*
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json

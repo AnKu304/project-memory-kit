@@ -8,9 +8,7 @@ from tools.project_memory.config import config_path, load_config
 from tools.project_memory.graph.sqlite_store import SQLiteGraphStore
 from tools.project_memory.hashing import sha256_file
 from tools.project_memory.ignore import iter_indexable_files
-from tools.project_memory.parsers.js_ts import JsTsParser
 from tools.project_memory.parsers.js_ts_imports import JS_TS_EXTENSIONS, language_for_path as js_ts_language_for_path
-from tools.project_memory.parsers.python_ast import PythonAstParser
 from tools.project_memory.parsers.symbol_model import ParseResult, Symbol
 from tools.project_memory.services.memory_scope import (
     annotate_indexed_path, classify_memory_path, existing_file_with_metadata,
@@ -25,13 +23,17 @@ from tools.project_memory.services.next_graph import (
 from tools.project_memory.vector.qdrant_store import QdrantLocalStore
 
 
-PYTHON_PARSER = PythonAstParser()
-JS_TS_PARSER = JsTsParser()
+PYTHON_PARSER = None
+JS_TS_PARSER = None
 
 
 def _cleanup_removed_files(root: Path, store: SQLiteGraphStore, files: list[Path]) -> int:
     current_paths = {path.relative_to(root).as_posix() for path in files}
     removed_paths = store.indexed_file_paths() - current_paths
+    from tools.project_memory.services.code_provider import external_code, is_code_source
+    if external_code(root):
+        # Code cleanup requires the explicit backed-up migration, never index().
+        removed_paths = {rel for rel in removed_paths if not is_code_source(root, rel)}
     for rel in sorted(removed_paths):
         store.clear_removed_file_memory(rel)
     return len(removed_paths)
@@ -43,9 +45,16 @@ def _lines_for(path: Path, start_line: int, end_line: int) -> str:
 
 
 def _parser_for(path: Path):
+    global PYTHON_PARSER, JS_TS_PARSER
     if path.suffix == ".py":
+        if PYTHON_PARSER is None:
+            from tools.project_memory.parsers.python_ast import PythonAstParser
+            PYTHON_PARSER = PythonAstParser()
         return PYTHON_PARSER, "python", "python_ast"
     if path.suffix in JS_TS_EXTENSIONS:
+        if JS_TS_PARSER is None:
+            from tools.project_memory.parsers.js_ts import JsTsParser
+            JS_TS_PARSER = JsTsParser()
         return JS_TS_PARSER, js_ts_language_for_path(path), "js_ts"
     return None, _language_for_path(path), "text"
 
@@ -434,9 +443,11 @@ def _index_file(
     vectors = get_vectors()
     with vectors.batch_fallback():
         store.clear_generated_file_memory(rel)
-        parser, language, parser_name = _parser_for(path)
-        route_info = next_route_info(path, rel)
-        file_props = file_properties(path, rel, route_info)
+        from tools.project_memory.services.code_provider import external_code
+        slim = external_code(root, cfg)
+        parser, language, parser_name = (None, None, 'text') if slim else _parser_for(path)
+        route_info = None if slim else next_route_info(path, rel)
+        file_props = {} if slim else file_properties(path, rel, route_info)
         file_id = store.upsert_node(
             kind="File",
             name=path.name,
@@ -552,13 +563,15 @@ def index_project(root: Path, mode: str = "changed") -> str:
             vectors.close()
 
     summary = [f"indexed={indexed}", f"skipped={skipped}", f"removed={removed}", f"mode={mode}"]
-    bound = _bind_cross_file_symbols(store)
+    from tools.project_memory.services.code_provider import external_code
+    slim = external_code(root, cfg)
+    bound = 0 if slim else _bind_cross_file_symbols(store)
     if bound:
         summary.append(f"bindings={bound}")
-    test_bound = _bind_test_files(store)
+    test_bound = 0 if slim else _bind_test_files(store)
     if test_bound:
         summary.append(f"test_bindings={test_bound}")
-    route_bound = bind_next_route_components(store)
+    route_bound = 0 if slim else bind_next_route_components(store)
     if route_bound:
         summary.append(f"route_bindings={route_bound}")
     if warnings:

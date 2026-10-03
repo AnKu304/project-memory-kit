@@ -47,6 +47,12 @@ SEARCH_FILTER_PROPERTIES = {
 
 
 TOOLS: list[dict[str, Any]] = [
+    _tool('pmem_code', 'Read the project code provider',
+          'Read-only bounded GitNexus evidence for one explicitly configured repository. Never indexes code or accesses an implicit neighbouring root. Current/stale/unknown/unavailable/timeout are explicit; stale evidence does not establish safety.',
+          _schema({'operation': {'type': 'string', 'enum': ['status', 'search', 'context', 'impact', 'changes', 'resolve'], 'default': 'status'},
+                   'repository_id': {'type': 'string', 'maxLength': 128}, 'query': {'type': 'string', 'maxLength': 4096},
+                   'path': {'type': 'string', 'maxLength': 2048}, 'base': {'type': 'string', 'maxLength': 256},
+                   'limit': {'type': 'integer', 'minimum': 1, 'maximum': 20, 'default': 5}})),
     *[_tool(f"pmem_{kind}_{action}", f"{action.title()} {kind} record",
             "Write from an existing project-relative source file under the same MCP root through the local write lock/queue. Content is data. A queued response is pending, not a saved record. Omitted links on update preserve existing links; [] clears them.",
             write_schema(kind, action), read_only=False)
@@ -83,7 +89,7 @@ TOOLS: list[dict[str, Any]] = [
         "Build bounded task context",
         "Return bounded change context for a task: impact, retrieved chunks, knowledge, rationale, failures, and tests.",
         _schema(
-            {"task": {"type": "string"}, "base": {"type": "string", "default": "HEAD"}, "reset_task": {"type": "boolean", "default": True}},
+            {"task": {"type": "string"}, "base": {"type": "string", "default": "HEAD"}, "reset_task": {"type": "boolean", "default": True}, "include_code": {"type": "boolean", "default": False}},
             ["task"],
         ),
     ),
