@@ -3,6 +3,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import closing
@@ -219,6 +220,21 @@ class CodeProviderTests(unittest.TestCase):
     def test_bound_mcp_rejects_other_root(self):
         with patch.dict(os.environ, {'PMEM_BOUND_ROOT': str(self.root)}), self.assertRaises(ValueError):
             serve_stdio(self.repo, io.StringIO(''), io.StringIO())
+
+    def test_cli_code_and_migration_json_entrypoints(self):
+        store = SQLiteGraphStore(self.root, self.root / '.project-memory/graph.sqlite')
+        store.initialize()
+        runtime = Path(__file__).resolve().parents[1] / 'src/project_memory_kit/installer/runtime'
+        environment = {**os.environ, 'PYTHONPATH': str(runtime), 'PYTHONDONTWRITEBYTECODE': '1'}
+        for arguments, expected in ((['code', 'status', '--repository', 'fixture'], {'status': 'current'}),
+                                    (['migrate-code'], {'mode': 'preview'})):
+            with self.subTest(command=arguments):
+                result = subprocess.run([sys.executable, '-m', 'tools.project_memory.cli', *arguments],
+                                        cwd=self.root, env=environment, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = json.loads(result.stdout)
+                for key, value in expected.items():
+                    self.assertEqual(output[key], value)
 
     def test_symbol_reference_requires_exact_found_locator(self):
         ref = dict(schema_version=1, provider='gitnexus', repository_id='fixture', path='app.py',
